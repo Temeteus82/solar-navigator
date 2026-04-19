@@ -57,7 +57,7 @@ pub(crate) fn run() {
             pitch: (55.0_f32 / 188.3_f32).asin(),
             distance: 188.3,
             min_distance: 3.0,
-            max_distance: 3000.0,
+            max_distance: 30_000.0,
             target: Vec3::ZERO,
             flight: None,
         })

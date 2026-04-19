@@ -1,9 +1,9 @@
 use super::materials::PlanetAtmosphereMaterial;
 use super::types::{
-    AU_TO_SCENE_UNITS, AppPaths, AppStatus, AtmosphereLayer, AtmosphereOf, BODIES, BodyEntity,
-    EphemerisResource, HorizonsHttpClient, HorizonsSyncResult, HorizonsSyncState,
-    HorizonsSyncTaskInput, HorizonsTargetSample, KM_PER_AU, LightingRig, MainCamera,
-    PlanetTextureEntry, PlanetTextureRegistry, StarsBackdrop, TextureStatus,
+    AppPaths, AppStatus, AtmosphereLayer, AtmosphereOf, BODIES, BodyEntity, EphemerisResource,
+    HorizonsHttpClient, HorizonsSyncResult, HorizonsSyncState, HorizonsSyncTaskInput,
+    HorizonsTargetSample, KM_PER_AU, LightingRig, MainCamera, PlanetTextureEntry,
+    PlanetTextureRegistry, StarsBackdrop, TextureStatus,
 };
 use super::util::{
     color_from_rgba, equirectangular_to_cubemap_image, linear_from_rgb, spawn_fallback_starfield,
@@ -63,8 +63,8 @@ pub(super) fn setup_scene(
     let solar_key = commands
         .spawn((
             PointLight {
-                // Scale-aware key light: with 1 AU = 25 scene units, Earth needs
-                // ~10^9 lumens to avoid appearing as an unlit silhouette.
+                // Scale-aware key light: calibrated so planets remain visibly lit
+                // across preset-dependent orbital distance scales.
                 intensity: 1_200_000_000.0,
                 range: 14_000.0,
                 color: Color::srgb(1.0, 0.95, 0.86),
@@ -280,7 +280,7 @@ pub(super) fn start_horizons_sync(
 ) {
     horizons_sync.enabled = false;
     horizons_sync.failures.clear();
-    horizons_sync.per_body_scene_offset = vec![DVec3::ZERO; BODIES.len()];
+    horizons_sync.per_body_au_offset = vec![DVec3::ZERO; BODIES.len()];
     horizons_sync.task = None;
     horizons_sync.retry_requested = false;
     horizons_sync.retry_attempt = 0;
@@ -428,13 +428,13 @@ fn apply_horizons_sync_result(
         enabled,
         status_line,
         failures,
-        per_body_scene_offset,
+        per_body_au_offset,
     } = result;
 
     horizons_sync.enabled = enabled;
     horizons_sync.status_line = status_line;
     horizons_sync.failures = failures;
-    horizons_sync.per_body_scene_offset = per_body_scene_offset;
+    horizons_sync.per_body_au_offset = per_body_au_offset;
 
     if enabled {
         horizons_sync.retry_attempt = 0;
@@ -524,7 +524,7 @@ fn run_horizons_sync_task(
     input: HorizonsSyncTaskInput,
 ) -> HorizonsSyncResult {
     let mut failures = input.initial_failures;
-    let mut per_body_scene_offset = vec![DVec3::ZERO; BODIES.len()];
+    let mut per_body_au_offset = vec![DVec3::ZERO; BODIES.len()];
     let mut validated_count = 0usize;
     let mut max_delta_km = 0.0_f64;
     let mut max_delta_body = "N/A";
@@ -546,11 +546,7 @@ fn run_horizons_sync_task(
                     max_delta_body = target.display_name;
                 }
 
-                per_body_scene_offset[target.index] = DVec3::new(
-                    dx * AU_TO_SCENE_UNITS,
-                    dz * AU_TO_SCENE_UNITS,
-                    -dy * AU_TO_SCENE_UNITS,
-                );
+                per_body_au_offset[target.index] = DVec3::new(dx, dz, -dy);
                 validated_count += 1;
             }
             Err(err) => {
@@ -590,7 +586,7 @@ fn run_horizons_sync_task(
         enabled,
         status_line,
         failures,
-        per_body_scene_offset,
+        per_body_au_offset,
     }
 }
 
@@ -622,7 +618,7 @@ mod tests {
                 enabled: true,
                 status_line: "ok".to_string(),
                 failures: Vec::new(),
-                per_body_scene_offset: vec![DVec3::ZERO; 3],
+                per_body_au_offset: vec![DVec3::ZERO; 3],
             },
             100.0,
         );
@@ -642,7 +638,7 @@ mod tests {
                 enabled: false,
                 status_line: "unavailable".to_string(),
                 failures: vec!["earth failed".to_string()],
-                per_body_scene_offset: vec![DVec3::ZERO; 2],
+                per_body_au_offset: vec![DVec3::ZERO; 2],
             },
             10.0,
         );
@@ -664,7 +660,7 @@ mod tests {
                 enabled: false,
                 status_line: "still unavailable".to_string(),
                 failures: vec!["request failed".to_string()],
-                per_body_scene_offset: vec![DVec3::ZERO; 1],
+                per_body_au_offset: vec![DVec3::ZERO; 1],
             },
             20.0,
         );
