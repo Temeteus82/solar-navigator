@@ -1,12 +1,20 @@
 use super::types::{
     AtmosphereLayer, AtmosphereOf, BODIES, BodyEntity, BodyRuntime, EphemerisResource,
-    HorizonsSyncState, MAX_SIMULATION_RATE_MULTIPLIER, MIN_SIMULATION_RATE_MULTIPLIER,
+    HorizonsSyncState, KM_PER_AU, MAX_SIMULATION_RATE_MULTIPLIER, MIN_SIMULATION_RATE_MULTIPLIER,
     OrbitCameraState, RenderSettings, SECONDS_PER_DAY, SimulationState,
     au_to_scene_units_for_preset,
 };
 use bevy::math::DVec3;
 use bevy::prelude::*;
 use bevy_egui::input::EguiWantsInput;
+use std::f64::consts::TAU;
+
+const CHARON_SEMI_MAJOR_AXIS_KM: f64 = 19_591.0;
+const CHARON_ORBIT_PERIOD_DAYS: f64 = 6.38723;
+const CHARON_ORBIT_PHASE_RADIANS: f64 = 1.1;
+const CHARON_Z_WOBBLE_FACTOR: f64 = 0.03;
+const CHARON_Z_WOBBLE_FREQUENCY: f64 = 1.4;
+const CHARON_TO_PLUTO_MASS_RATIO: f64 = 0.1218;
 
 pub(super) fn keyboard_controls(
     key_input: Res<ButtonInput<KeyCode>>,
@@ -64,14 +72,15 @@ pub(super) fn update_body_positions(
     } else {
         time.delta_secs() * simulation_state.simulation_rate as f32
     };
+    let mut scene_positions = vec![DVec3::ZERO; BODIES.len()];
 
-    for (body, mut transform) in &mut body_query {
-        let spec = BODIES[body.index];
+    for body_index in 0..BODIES.len() {
+        let spec = BODIES[body_index];
         let position_au = ephemeris
             .ephemeris
             .position_au(spec.spice_target, simulation_state.elapsed_simulation_days);
 
-        let mut scene_position = DVec3::new(
+        scene_positions[body_index] = DVec3::new(
             position_au[0] * au_to_scene_units,
             position_au[2] * au_to_scene_units,
             // Preserve right-handed axes while remapping SPICE Z -> scene Y.
@@ -79,10 +88,21 @@ pub(super) fn update_body_positions(
         );
 
         if horizons_sync.enabled
-            && let Some(offset_au) = horizons_sync.per_body_au_offset.get(body.index)
+            && let Some(offset_au) = horizons_sync.per_body_au_offset.get(body_index)
         {
-            scene_position += *offset_au * au_to_scene_units;
+            scene_positions[body_index] += *offset_au * au_to_scene_units;
         }
+    }
+
+    apply_pluto_charon_center_positions(
+        &mut scene_positions,
+        simulation_state.elapsed_simulation_days,
+        au_to_scene_units,
+    );
+
+    for (body, mut transform) in &mut body_query {
+        let spec = BODIES[body.index];
+        let scene_position = scene_positions[body.index];
 
         transform.translation = scene_position.as_vec3();
         let spin_step = spin_step_radians(spec.spin_radians_per_second, frame_simulation_seconds);
@@ -96,6 +116,48 @@ pub(super) fn update_body_positions(
             *slot = scene_position;
         }
     }
+}
+
+fn body_index_for_target(target: &str) -> Option<usize> {
+    BODIES.iter().position(|spec| spec.spice_target == target)
+}
+
+fn charon_relative_scene_offset(elapsed_simulation_days: f64, au_to_scene_units: f64) -> DVec3 {
+    let radius_scene_units = (CHARON_SEMI_MAJOR_AXIS_KM / KM_PER_AU) * au_to_scene_units;
+    let theta =
+        TAU * elapsed_simulation_days / CHARON_ORBIT_PERIOD_DAYS + CHARON_ORBIT_PHASE_RADIANS;
+
+    DVec3::new(
+        radius_scene_units * theta.cos(),
+        radius_scene_units * CHARON_Z_WOBBLE_FACTOR * (theta * CHARON_Z_WOBBLE_FREQUENCY).sin(),
+        -radius_scene_units * theta.sin(),
+    )
+}
+
+fn apply_pluto_charon_center_positions(
+    scene_positions: &mut [DVec3],
+    elapsed_simulation_days: f64,
+    au_to_scene_units: f64,
+) {
+    let Some(pluto_barycenter_index) = body_index_for_target("PLUTO BARYCENTER") else {
+        return;
+    };
+    let Some(charon_index) = body_index_for_target("CHARON") else {
+        return;
+    };
+
+    let pluto_charon_barycenter = scene_positions[pluto_barycenter_index];
+    let charon_from_pluto =
+        charon_relative_scene_offset(elapsed_simulation_days, au_to_scene_units);
+    let charon_mass_fraction = CHARON_TO_PLUTO_MASS_RATIO / (1.0 + CHARON_TO_PLUTO_MASS_RATIO);
+    let pluto_mass_fraction = 1.0 - charon_mass_fraction;
+
+    // Reconstruct Pluto/Charon center positions from the Pluto-Charon barycenter so
+    // separation remains on the same physical scale as all other AU-derived distances.
+    scene_positions[pluto_barycenter_index] =
+        pluto_charon_barycenter - charon_from_pluto * charon_mass_fraction;
+    scene_positions[charon_index] =
+        pluto_charon_barycenter + charon_from_pluto * pluto_mass_fraction;
 }
 
 fn spin_step_radians(spin_radians_per_second: f32, frame_seconds: f32) -> f32 {
@@ -115,7 +177,11 @@ pub(super) fn sync_atmosphere_positions(
 
 #[cfg(test)]
 mod tests {
-    use super::spin_step_radians;
+    use super::{
+        CHARON_TO_PLUTO_MASS_RATIO, apply_pluto_charon_center_positions, body_index_for_target,
+        charon_relative_scene_offset, spin_step_radians,
+    };
+    use bevy::math::DVec3;
 
     #[test]
     fn spin_step_radians_inverts_prograde_sign() {
@@ -130,5 +196,30 @@ mod tests {
     #[test]
     fn spin_step_radians_zero_rate_is_zero() {
         assert_eq!(spin_step_radians(0.0, 2.0), 0.0);
+    }
+
+    #[test]
+    fn apply_pluto_charon_center_positions_preserves_barycenter_and_separation() {
+        let mut positions = vec![DVec3::ZERO; super::BODIES.len()];
+        let pluto_index =
+            body_index_for_target("PLUTO BARYCENTER").expect("pluto index should exist");
+        let charon_index = body_index_for_target("CHARON").expect("charon index should exist");
+        let original_barycenter = DVec3::new(12.0, -4.0, 8.0);
+        positions[pluto_index] = original_barycenter;
+
+        let elapsed_days = 42.0;
+        let au_to_scene_units = 250.0;
+        apply_pluto_charon_center_positions(&mut positions, elapsed_days, au_to_scene_units);
+
+        let pluto = positions[pluto_index];
+        let charon = positions[charon_index];
+        let expected_separation =
+            charon_relative_scene_offset(elapsed_days, au_to_scene_units).length();
+        let actual_separation = (charon - pluto).length();
+        let reconstructed_barycenter =
+            (pluto + charon * CHARON_TO_PLUTO_MASS_RATIO) / (1.0 + CHARON_TO_PLUTO_MASS_RATIO);
+
+        assert!((actual_separation - expected_separation).abs() < 1e-12);
+        assert!((reconstructed_barycenter - original_barycenter).length() < 1e-12);
     }
 }
