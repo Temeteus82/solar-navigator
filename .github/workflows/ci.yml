@@ -73,11 +73,7 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            setup_command: ./scripts/setup_cspice_linux_x86_64.sh
-            setup_shell: bash
           - os: windows-latest
-            setup_command: .\scripts\setup_cspice_windows_x86_64.ps1
-            setup_shell: pwsh
 
     runs-on: ${{ matrix.os }}
 
@@ -110,9 +106,17 @@ jobs:
             libxrandr-dev \
             pkg-config
 
-      - name: Install CSPICE toolkit
-        run: ${{ matrix.setup_command }}
-        shell: ${{ matrix.setup_shell }}
+      - name: Install CSPICE toolkit (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          chmod +x ./scripts/setup_cspice_linux_x86_64.sh
+          ./scripts/setup_cspice_linux_x86_64.sh
+
+      - name: Install CSPICE toolkit (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: .\scripts\setup_cspice_windows_x86_64.ps1
 
       - name: cargo check (SPICE)
         run: cargo check --all-targets --no-default-features --features spice
