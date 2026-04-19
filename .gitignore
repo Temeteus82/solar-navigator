@@ -1,0 +1,8 @@
+/target
+/dist
+/vendor/cspice
+
+.DS_Store
+**/.DS_Store
+.env
+.env.*

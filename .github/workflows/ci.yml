@@ -1,0 +1,259 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+
+jobs:
+  rust-quality:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            feature_flags: ""
+            run_tests: "true"
+          - os: ubuntu-latest
+            feature_flags: "--no-default-features"
+            run_tests: "true"
+          - os: windows-latest
+            feature_flags: "--no-default-features"
+            run_tests: "true"
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Linux system dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang \
+            libasound2-dev \
+            libudev-dev \
+            libwayland-dev \
+            libx11-dev \
+            libxcursor-dev \
+            libxinerama-dev \
+            libxkbcommon-dev \
+            libxi-dev \
+            libxrandr-dev \
+            pkg-config
+
+      - name: cargo fmt
+        if: matrix.os == 'macos-latest'
+        run: cargo fmt --check
+
+      - name: cargo check
+        run: cargo check --all-targets ${{ matrix.feature_flags }}
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets ${{ matrix.feature_flags }} -- -D warnings
+
+      - name: cargo test
+        if: matrix.run_tests == 'true'
+        run: cargo test --all-targets ${{ matrix.feature_flags }}
+
+  spice-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            setup_command: ./scripts/setup_cspice_linux_x86_64.sh
+            setup_shell: bash
+          - os: windows-latest
+            setup_command: .\scripts\setup_cspice_windows_x86_64.ps1
+            setup_shell: pwsh
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Linux system dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang \
+            libasound2-dev \
+            libudev-dev \
+            libwayland-dev \
+            libx11-dev \
+            libxcursor-dev \
+            libxinerama-dev \
+            libxkbcommon-dev \
+            libxi-dev \
+            libxrandr-dev \
+            pkg-config
+
+      - name: Install CSPICE toolkit
+        run: ${{ matrix.setup_command }}
+        shell: ${{ matrix.setup_shell }}
+
+      - name: cargo check (SPICE)
+        run: cargo check --all-targets --no-default-features --features spice
+
+      - name: cargo clippy (SPICE)
+        run: cargo clippy --all-targets --no-default-features --features spice -- -D warnings
+
+      - name: cargo test (SPICE)
+        run: cargo test --all-targets --no-default-features --features spice
+
+  linux-distro-compat:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: ubuntu-24.04
+            image: ubuntu:24.04
+            install_deps: |
+              apt-get update
+              apt-get install -y \
+                build-essential \
+                ca-certificates \
+                clang \
+                curl \
+                libasound2-dev \
+                libudev-dev \
+                libwayland-dev \
+                libx11-dev \
+                libxcursor-dev \
+                libxi-dev \
+                libxinerama-dev \
+                libxkbcommon-dev \
+                libxrandr-dev \
+                pkg-config
+          - distro: debian-12
+            image: debian:12
+            install_deps: |
+              apt-get update
+              apt-get install -y \
+                build-essential \
+                ca-certificates \
+                clang \
+                curl \
+                libasound2-dev \
+                libudev-dev \
+                libwayland-dev \
+                libx11-dev \
+                libxcursor-dev \
+                libxi-dev \
+                libxinerama-dev \
+                libxkbcommon-dev \
+                libxrandr-dev \
+                pkg-config
+          - distro: fedora-42
+            image: fedora:42
+            install_deps: |
+              dnf -y update
+              dnf -y install \
+                alsa-lib-devel \
+                ca-certificates \
+                clang \
+                curl \
+                gcc \
+                gcc-c++ \
+                libX11-devel \
+                libXcursor-devel \
+                libXi-devel \
+                libXinerama-devel \
+                libxkbcommon-devel \
+                libXrandr-devel \
+                make \
+                pkgconf-pkg-config \
+                systemd-devel \
+                wayland-devel
+          - distro: archlinux-latest
+            image: archlinux:latest
+            install_deps: |
+              pacman -Syu --noconfirm
+              pacman -S --noconfirm --needed \
+                alsa-lib \
+                base-devel \
+                ca-certificates \
+                clang \
+                curl \
+                libx11 \
+                libxcursor \
+                libxi \
+                libxinerama \
+                libxkbcommon \
+                libxrandr \
+                pkgconf \
+                systemd \
+                wayland
+
+    name: linux-distro-compat (${{ matrix.distro }})
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.image }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install distro build dependencies
+        run: ${{ matrix.install_deps }}
+        shell: bash
+
+      - name: Install Rust toolchain (stable + clippy)
+        shell: bash
+        run: |
+          curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          source "$HOME/.cargo/env"
+          rustup component add clippy
+
+      - name: cargo check (portable)
+        shell: bash
+        run: |
+          source "$HOME/.cargo/env"
+          cargo check --all-targets --no-default-features
+
+      - name: cargo clippy (portable)
+        shell: bash
+        run: |
+          source "$HOME/.cargo/env"
+          cargo clippy --all-targets --no-default-features -- -D warnings
+
+      - name: cargo test compile (portable)
+        shell: bash
+        run: |
+          source "$HOME/.cargo/env"
+          cargo test --all-targets --no-default-features --no-run
+
+      - name: Install CSPICE toolkit
+        shell: bash
+        run: |
+          chmod +x ./scripts/setup_cspice_linux_x86_64.sh
+          ./scripts/setup_cspice_linux_x86_64.sh
+
+      - name: cargo check (SPICE)
+        shell: bash
+        run: |
+          source "$HOME/.cargo/env"
+          cargo check --all-targets --no-default-features --features spice
