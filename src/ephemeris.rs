@@ -99,8 +99,8 @@ impl SpiceEphemeris {
             lock.furnsh(&optional_gravity.to_string_lossy());
         }
 
-        let utc_now = Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
-        let base_et = lock.str2et(&utc_now);
+        let utc_now = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let base_et = lock.str2et(&spice_utc_timestamp_input(&utc_now));
 
         let status_line = format!(
             "SPICE mode active: loaded {}, {}{}{}",
@@ -156,14 +156,7 @@ impl SpiceEphemeris {
             EphemerisState::Spice { lock, base_et } => {
                 let et = *base_et + elapsed_simulation_days * SECONDS_PER_DAY;
                 let sl = lock.lock().expect("SPICE lock poisoned");
-                let (position_km, _light_time) =
-                    sl.spkpos(target, et, SPICE_REFERENCE_FRAME, "NONE", "SUN");
-
-                [
-                    position_km[0] / KM_PER_AU,
-                    position_km[1] / KM_PER_AU,
-                    position_km[2] / KM_PER_AU,
-                ]
+                spice_position_au_at_et(&sl, target, et)
             }
             EphemerisState::Fallback => fallback_position_au(target, elapsed_simulation_days),
         }
@@ -176,6 +169,54 @@ impl SpiceEphemeris {
         } else {
             fallback_position_au(target, elapsed_simulation_days)
         }
+    }
+
+    #[cfg(feature = "spice")]
+    pub fn position_au_at_utc_timestamp(&self, target: &str, utc_timestamp: &str) -> [f64; 3] {
+        if target.eq_ignore_ascii_case("SUN") {
+            return [0.0, 0.0, 0.0];
+        }
+
+        match &self.state {
+            EphemerisState::Spice { lock, base_et } => {
+                let sl = lock.lock().expect("SPICE lock poisoned");
+                let et = sl.str2et(&spice_utc_timestamp_input(utc_timestamp));
+
+                if spice_supports_target(target) {
+                    spice_position_au_at_et(&sl, target, et)
+                } else {
+                    let elapsed_simulation_days = (et - *base_et) / SECONDS_PER_DAY;
+                    fallback_position_au(target, elapsed_simulation_days)
+                }
+            }
+            EphemerisState::Fallback => fallback_position_au(target, 0.0),
+        }
+    }
+
+    #[cfg(not(feature = "spice"))]
+    pub fn position_au_at_utc_timestamp(&self, target: &str, utc_timestamp: &str) -> [f64; 3] {
+        let _ = utc_timestamp;
+        self.position_au(target, 0.0)
+    }
+}
+
+#[cfg(feature = "spice")]
+fn spice_position_au_at_et(lock: &SpiceLock, target: &str, et: f64) -> [f64; 3] {
+    let (position_km, _light_time) = lock.spkpos(target, et, SPICE_REFERENCE_FRAME, "NONE", "SUN");
+
+    [
+        position_km[0] / KM_PER_AU,
+        position_km[1] / KM_PER_AU,
+        position_km[2] / KM_PER_AU,
+    ]
+}
+
+#[cfg(feature = "spice")]
+fn spice_utc_timestamp_input(utc_timestamp: &str) -> String {
+    if utc_timestamp.ends_with('Z') || utc_timestamp.to_ascii_uppercase().contains("UTC") {
+        utc_timestamp.to_string()
+    } else {
+        format!("{utc_timestamp} UTC")
     }
 }
 
@@ -547,5 +588,14 @@ $$EOE
             fallback_position_au("NOT_A_REAL_TARGET", 12.34),
             [0.0, 0.0, 0.0]
         );
+    }
+
+    #[cfg(not(feature = "spice"))]
+    #[test]
+    fn position_au_at_utc_timestamp_matches_day_zero_without_spice() {
+        let ephemeris = SpiceEphemeris::new(std::path::Path::new("."));
+        let at_timestamp = ephemeris.position_au_at_utc_timestamp("EARTH", "2026-04-19 12:00:00");
+        let day_zero = ephemeris.position_au("EARTH", 0.0);
+        assert_eq!(at_timestamp, day_zero);
     }
 }
