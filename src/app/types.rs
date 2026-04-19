@@ -5,7 +5,9 @@ use bevy::tasks::Task;
 use reqwest::blocking::Client;
 use std::path::PathBuf;
 
-pub(super) const AU_TO_SCENE_UNITS: f64 = 25.0;
+pub(super) const AU_TO_SCENE_UNITS_NAVIGATION: f64 = 25.0;
+pub(super) const AU_TO_SCENE_UNITS_REALISTIC: f64 = 250.0;
+pub(super) const AU_TO_SCENE_UNITS_CINEMATIC: f64 = 18.0;
 pub(super) const KM_PER_AU: f64 = 149_597_870.7;
 pub(super) const SECONDS_PER_DAY: f64 = 86_400.0;
 pub(super) const DEFAULT_SIMULATION_RATE_MULTIPLIER: f64 = 1.0;
@@ -13,7 +15,7 @@ pub(super) const MIN_SIMULATION_RATE_MULTIPLIER: f64 = 0.01;
 pub(super) const MAX_SIMULATION_RATE_MULTIPLIER: f64 = 100_000.0;
 pub(super) const SIDE_PANEL_WIDTH_PX: f32 = 300.0;
 pub(super) const STARFIELD_COUNT: usize = 900;
-pub(super) const STARFIELD_RADIUS: f32 = 5_500.0;
+pub(super) const STARFIELD_RADIUS: f32 = 30_000.0;
 
 #[derive(Clone, Copy)]
 pub(super) struct BodySpec {
@@ -22,6 +24,8 @@ pub(super) struct BodySpec {
     pub(super) visual_radius: f32,
     pub(super) color: [f32; 4],
     pub(super) texture_file: &'static str,
+    // Signed sidereal spin rate in radians per simulated second.
+    // Positive = prograde, negative = retrograde.
     pub(super) spin_radians_per_second: f32,
     pub(super) mesh_subdivisions: u32,
     pub(super) metallic: f32,
@@ -48,6 +52,18 @@ impl LightingPreset {
     }
 }
 
+pub(super) const fn au_to_scene_units_for_preset(preset: LightingPreset) -> f64 {
+    match preset {
+        LightingPreset::Navigation => AU_TO_SCENE_UNITS_NAVIGATION,
+        LightingPreset::Realistic => AU_TO_SCENE_UNITS_REALISTIC,
+        LightingPreset::Cinematic => AU_TO_SCENE_UNITS_CINEMATIC,
+    }
+}
+
+const fn sidereal_spin_radians_per_second(sidereal_period_days: f64) -> f32 {
+    (std::f64::consts::TAU / (sidereal_period_days * SECONDS_PER_DAY)) as f32
+}
+
 #[derive(Resource)]
 pub(super) struct AppStatus {
     pub(super) spice_enabled: bool,
@@ -72,7 +88,7 @@ pub(super) struct HorizonsSyncResult {
     pub(super) enabled: bool,
     pub(super) status_line: String,
     pub(super) failures: Vec<String>,
-    pub(super) per_body_scene_offset: Vec<DVec3>,
+    pub(super) per_body_au_offset: Vec<DVec3>,
 }
 
 #[derive(Resource)]
@@ -80,7 +96,7 @@ pub(super) struct HorizonsSyncState {
     pub(super) enabled: bool,
     pub(super) status_line: String,
     pub(super) failures: Vec<String>,
-    pub(super) per_body_scene_offset: Vec<DVec3>,
+    pub(super) per_body_au_offset: Vec<DVec3>,
     pub(super) task: Option<Task<HorizonsSyncResult>>,
     pub(super) retry_requested: bool,
     pub(super) retry_attempt: u32,
@@ -93,7 +109,7 @@ impl HorizonsSyncState {
             enabled: false,
             status_line: "Horizons sync idle".to_string(),
             failures: Vec::new(),
-            per_body_scene_offset: vec![DVec3::ZERO; body_count],
+            per_body_au_offset: vec![DVec3::ZERO; body_count],
             task: None,
             retry_requested: false,
             retry_attempt: 0,
@@ -236,7 +252,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
         visual_radius: 3.8,
         color: [1.0, 0.9, 0.55, 1.0],
         texture_file: "sun.jpg",
-        spin_radians_per_second: 0.003,
+        spin_radians_per_second: sidereal_spin_radians_per_second(25.38),
         mesh_subdivisions: 96,
         metallic: 0.0,
         roughness: 0.6,
@@ -250,7 +266,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
         visual_radius: 0.26,
         color: [0.65, 0.62, 0.59, 1.0],
         texture_file: "mercury.jpg",
-        spin_radians_per_second: 0.008,
+        spin_radians_per_second: sidereal_spin_radians_per_second(58.646),
         mesh_subdivisions: 56,
         metallic: 0.03,
         roughness: 0.86,
@@ -264,7 +280,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
         visual_radius: 0.5,
         color: [0.92, 0.76, 0.4, 1.0],
         texture_file: "venus.jpg",
-        spin_radians_per_second: 0.004,
+        spin_radians_per_second: sidereal_spin_radians_per_second(-243.025),
         mesh_subdivisions: 60,
         metallic: 0.02,
         roughness: 0.74,
@@ -278,7 +294,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
         visual_radius: 0.55,
         color: [0.3, 0.5, 1.0, 1.0],
         texture_file: "earth.jpg",
-        spin_radians_per_second: 0.03,
+        spin_radians_per_second: sidereal_spin_radians_per_second(0.997_269_68),
         mesh_subdivisions: 64,
         metallic: 0.05,
         roughness: 0.52,
@@ -292,7 +308,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
         visual_radius: 0.18,
         color: [0.84, 0.84, 0.8, 1.0],
         texture_file: "moon.jpg",
-        spin_radians_per_second: 0.01,
+        spin_radians_per_second: sidereal_spin_radians_per_second(27.321_661),
         mesh_subdivisions: 48,
         metallic: 0.01,
         roughness: 0.89,
@@ -306,7 +322,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
         visual_radius: 0.3,
         color: [0.8, 0.35, 0.2, 1.0],
         texture_file: "mars.jpg",
-        spin_radians_per_second: 0.028,
+        spin_radians_per_second: sidereal_spin_radians_per_second(1.025_957),
         mesh_subdivisions: 56,
         metallic: 0.02,
         roughness: 0.7,
@@ -320,7 +336,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
         visual_radius: 0.14,
         color: [0.74, 0.74, 0.72, 1.0],
         texture_file: "ceres.jpg",
-        spin_radians_per_second: 0.02,
+        spin_radians_per_second: sidereal_spin_radians_per_second(0.3781),
         mesh_subdivisions: 40,
         metallic: 0.01,
         roughness: 0.9,
@@ -334,7 +350,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
         visual_radius: 0.11,
         color: [0.7, 0.66, 0.62, 1.0],
         texture_file: "vesta.jpg",
-        spin_radians_per_second: 0.016,
+        spin_radians_per_second: sidereal_spin_radians_per_second(0.2226),
         mesh_subdivisions: 40,
         metallic: 0.01,
         roughness: 0.9,
@@ -348,7 +364,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
         visual_radius: 1.8,
         color: [0.82, 0.66, 0.42, 1.0],
         texture_file: "jupiter.jpg",
-        spin_radians_per_second: 0.06,
+        spin_radians_per_second: sidereal_spin_radians_per_second(0.41354),
         mesh_subdivisions: 72,
         metallic: 0.0,
         roughness: 0.6,
@@ -362,7 +378,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
         visual_radius: 1.5,
         color: [0.83, 0.77, 0.56, 1.0],
         texture_file: "saturn.jpg",
-        spin_radians_per_second: 0.055,
+        spin_radians_per_second: sidereal_spin_radians_per_second(0.444),
         mesh_subdivisions: 72,
         metallic: 0.0,
         roughness: 0.62,
@@ -376,7 +392,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
         visual_radius: 0.95,
         color: [0.57, 0.82, 0.92, 1.0],
         texture_file: "uranus.jpg",
-        spin_radians_per_second: 0.04,
+        spin_radians_per_second: sidereal_spin_radians_per_second(-0.71833),
         mesh_subdivisions: 64,
         metallic: 0.0,
         roughness: 0.45,
@@ -390,7 +406,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
         visual_radius: 0.92,
         color: [0.35, 0.45, 0.95, 1.0],
         texture_file: "neptune.jpg",
-        spin_radians_per_second: 0.038,
+        spin_radians_per_second: sidereal_spin_radians_per_second(0.67125),
         mesh_subdivisions: 64,
         metallic: 0.0,
         roughness: 0.5,
@@ -404,7 +420,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
         visual_radius: 0.16,
         color: [0.82, 0.76, 0.68, 1.0],
         texture_file: "pluto.jpg",
-        spin_radians_per_second: 0.01,
+        spin_radians_per_second: sidereal_spin_radians_per_second(-6.38723),
         mesh_subdivisions: 48,
         metallic: 0.0,
         roughness: 0.86,
@@ -418,7 +434,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
         visual_radius: 0.08,
         color: [0.74, 0.74, 0.72, 1.0],
         texture_file: "charon.jpg",
-        spin_radians_per_second: 0.01,
+        spin_radians_per_second: sidereal_spin_radians_per_second(-6.38723),
         mesh_subdivisions: 36,
         metallic: 0.0,
         roughness: 0.9,
@@ -427,3 +443,30 @@ pub(super) const BODIES: [BodySpec; 14] = [
         atmosphere_emissive: [0.0, 0.0, 0.0, 0.0],
     },
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn au_to_scene_units_for_preset_uses_expected_scales() {
+        assert_eq!(
+            au_to_scene_units_for_preset(LightingPreset::Navigation),
+            AU_TO_SCENE_UNITS_NAVIGATION
+        );
+        assert_eq!(
+            au_to_scene_units_for_preset(LightingPreset::Realistic),
+            AU_TO_SCENE_UNITS_REALISTIC
+        );
+        assert_eq!(
+            au_to_scene_units_for_preset(LightingPreset::Cinematic),
+            AU_TO_SCENE_UNITS_CINEMATIC
+        );
+    }
+
+    #[test]
+    fn sidereal_spin_radians_per_second_preserves_retrograde_sign() {
+        assert!(sidereal_spin_radians_per_second(1.0) > 0.0);
+        assert!(sidereal_spin_radians_per_second(-1.0) < 0.0);
+    }
+}

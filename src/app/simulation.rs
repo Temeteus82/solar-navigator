@@ -1,7 +1,8 @@
 use super::types::{
-    AU_TO_SCENE_UNITS, AtmosphereLayer, AtmosphereOf, BODIES, BodyEntity, BodyRuntime,
-    EphemerisResource, HorizonsSyncState, MAX_SIMULATION_RATE_MULTIPLIER,
-    MIN_SIMULATION_RATE_MULTIPLIER, OrbitCameraState, SECONDS_PER_DAY, SimulationState,
+    AtmosphereLayer, AtmosphereOf, BODIES, BodyEntity, BodyRuntime, EphemerisResource,
+    HorizonsSyncState, MAX_SIMULATION_RATE_MULTIPLIER, MIN_SIMULATION_RATE_MULTIPLIER,
+    OrbitCameraState, RenderSettings, SECONDS_PER_DAY, SimulationState,
+    au_to_scene_units_for_preset,
 };
 use bevy::math::DVec3;
 use bevy::prelude::*;
@@ -51,12 +52,18 @@ pub(super) fn advance_simulation_time(
 pub(super) fn update_body_positions(
     time: Res<Time>,
     simulation_state: Res<SimulationState>,
+    render_settings: Res<RenderSettings>,
     ephemeris: NonSend<EphemerisResource>,
     horizons_sync: Res<HorizonsSyncState>,
     mut body_runtime: ResMut<BodyRuntime>,
     mut body_query: Query<(&BodyEntity, &mut Transform)>,
 ) {
-    let frame_seconds = time.delta_secs();
+    let au_to_scene_units = au_to_scene_units_for_preset(render_settings.preset);
+    let frame_simulation_seconds = if simulation_state.paused {
+        0.0
+    } else {
+        time.delta_secs() * simulation_state.simulation_rate as f32
+    };
 
     for (body, mut transform) in &mut body_query {
         let spec = BODIES[body.index];
@@ -65,27 +72,34 @@ pub(super) fn update_body_positions(
             .position_au(spec.spice_target, simulation_state.elapsed_simulation_days);
 
         let mut scene_position = DVec3::new(
-            position_au[0] * AU_TO_SCENE_UNITS,
-            position_au[2] * AU_TO_SCENE_UNITS,
+            position_au[0] * au_to_scene_units,
+            position_au[2] * au_to_scene_units,
             // Preserve right-handed axes while remapping SPICE Z -> scene Y.
-            -position_au[1] * AU_TO_SCENE_UNITS,
+            -position_au[1] * au_to_scene_units,
         );
 
         if horizons_sync.enabled
-            && let Some(offset) = horizons_sync.per_body_scene_offset.get(body.index)
+            && let Some(offset_au) = horizons_sync.per_body_au_offset.get(body.index)
         {
-            scene_position += *offset;
+            scene_position += *offset_au * au_to_scene_units;
         }
 
         transform.translation = scene_position.as_vec3();
-        if spec.spin_radians_per_second > 0.0 {
-            transform.rotate_local_z(spec.spin_radians_per_second * frame_seconds);
+        let spin_step = spin_step_radians(spec.spin_radians_per_second, frame_simulation_seconds);
+        if spin_step != 0.0 {
+            // After the mesh pre-rotation in setup, local +Z is the visual spin axis.
+            // Negating here aligns prograde texture motion with expected planet rotation.
+            transform.rotate_local_z(spin_step);
         }
 
         if let Some(slot) = body_runtime.positions.get_mut(body.index) {
             *slot = scene_position;
         }
     }
+}
+
+fn spin_step_radians(spin_radians_per_second: f32, frame_seconds: f32) -> f32 {
+    -spin_radians_per_second * frame_seconds
 }
 
 pub(super) fn sync_atmosphere_positions(
@@ -96,5 +110,25 @@ pub(super) fn sync_atmosphere_positions(
         if let Some(position) = body_runtime.positions.get(atmosphere.index) {
             transform.translation = position.as_vec3();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::spin_step_radians;
+
+    #[test]
+    fn spin_step_radians_inverts_prograde_sign() {
+        assert_eq!(spin_step_radians(0.5, 2.0), -1.0);
+    }
+
+    #[test]
+    fn spin_step_radians_preserves_retrograde_behavior() {
+        assert_eq!(spin_step_radians(-0.5, 2.0), 1.0);
+    }
+
+    #[test]
+    fn spin_step_radians_zero_rate_is_zero() {
+        assert_eq!(spin_step_radians(0.0, 2.0), 0.0);
     }
 }

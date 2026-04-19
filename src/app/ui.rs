@@ -1,7 +1,7 @@
 use super::types::{
     AppStatus, BODIES, HorizonsSyncState, MAX_SIMULATION_RATE_MULTIPLIER,
     MIN_SIMULATION_RATE_MULTIPLIER, OrbitCameraState, RenderSettings, SECONDS_PER_DAY,
-    SIDE_PANEL_WIDTH_PX, SimulationState, TextureStatus,
+    SIDE_PANEL_WIDTH_PX, SimulationState, TextureStatus, au_to_scene_units_for_preset,
 };
 use super::util::format_simulation_speed;
 use bevy::prelude::*;
@@ -114,6 +114,10 @@ pub(super) fn draw_side_panel(
                         super::types::LightingPreset::Cinematic.label(),
                     );
                 });
+            ui.small(format!(
+                "Distance scale: 1 AU = {:.1} units",
+                au_to_scene_units_for_preset(render_settings.preset)
+            ));
 
             ui.checkbox(&mut render_settings.stars_enabled, "Starfield backdrop");
             ui.checkbox(&mut render_settings.atmosphere_enabled, "Atmosphere halos");
