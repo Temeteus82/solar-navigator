@@ -3,4 +3,3 @@ CSPICE_DIR = { value = "vendor/cspice/cspice", relative = true }
 
 [target.aarch64-apple-darwin]
 linker = "scripts/linker-wrapper.sh"
-rustflags = ["-C", "target-cpu=native"]
