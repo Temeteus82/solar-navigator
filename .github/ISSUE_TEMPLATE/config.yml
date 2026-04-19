@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security report
+    url: https://github.com/Temeteus82/solar-navigator/security/policy
+    about: For security vulnerabilities, please follow the security policy.
