@@ -53,6 +53,13 @@ jobs:
             libxrandr-dev \
             pkg-config
 
+      - name: Install CSPICE toolkit (macOS)
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        run: |
+          chmod +x ./scripts/setup_cspice_macos_arm64.sh
+          ./scripts/setup_cspice_macos_arm64.sh
+
       - name: cargo fmt
         if: matrix.os == 'macos-latest'
         run: cargo fmt --check
