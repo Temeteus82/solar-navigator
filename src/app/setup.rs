@@ -386,7 +386,9 @@ fn queue_horizons_sync_task(
             continue;
         };
 
-        let spice_au = ephemeris.ephemeris.position_au(spec.spice_target, 0.0);
+        let spice_au = ephemeris
+            .ephemeris
+            .position_au_at_utc_timestamp(spec.spice_target, &utc_timestamp);
         targets.push(HorizonsTargetSample {
             index,
             display_name: spec.display_name,
