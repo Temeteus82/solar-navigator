@@ -238,6 +238,7 @@ pub fn horizons_command_for_target(target: &str) -> Option<&'static str> {
         "SUN" => Some("10"),
         "MERCURY BARYCENTER" => Some("1"),
         "VENUS BARYCENTER" => Some("2"),
+        "EARTH" => Some("399"),
         "EARTH BARYCENTER" => Some("3"),
         "MOON" => Some("301"),
         "MARS BARYCENTER" => Some("4"),
@@ -359,7 +360,7 @@ fn fallback_position_au(target: &str, elapsed_days: f64) -> [f64; 3] {
         return [x, y, z];
     }
     if target.eq_ignore_ascii_case("CHARON") {
-        let pluto = fallback_planet_position_au("PLUTO BARYCENTER", elapsed_days);
+        let pluto = fallback_planet_position_au("PLUTO", elapsed_days);
         let charon_radius_au = CHARON_SEMI_MAJOR_AXIS_KM / KM_PER_AU;
         let theta = std::f64::consts::TAU * elapsed_days / 6.38723 + 1.1;
 
@@ -465,6 +466,7 @@ fn spice_supports_target(target: &str) -> bool {
         "SUN"
             | "MERCURY BARYCENTER"
             | "VENUS BARYCENTER"
+            | "EARTH"
             | "EARTH BARYCENTER"
             | "MOON"
             | "MARS BARYCENTER"
@@ -572,7 +574,7 @@ $$EOE
     fn fallback_position_au_charon_xy_radius_matches_semi_major_axis() {
         let elapsed_days = 133.7;
         let charon = fallback_position_au("CHARON", elapsed_days);
-        let pluto = fallback_planet_position_au("PLUTO BARYCENTER", elapsed_days);
+        let pluto = fallback_planet_position_au("PLUTO", elapsed_days);
 
         let dx = charon[0] - pluto[0];
         let dy = charon[1] - pluto[1];

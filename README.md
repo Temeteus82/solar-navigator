@@ -161,6 +161,10 @@ Use `.\scripts\package_windows.ps1 -WithSpice` for a SPICE-enabled package.
 
 Texture filenames expected by the app are documented in `assets/textures/README.md`.
 
+## Known Issues
+
+- **Moon/Earth visual scale mismatch (open bug):** Even with physically scaled center-to-center distances, the current body render sizes can still make the Moon appear unrealistically close to Earth in some camera/preset combinations. A separate visual-scaling model (independent from orbital distance scale) is still needed.
+
 ## Project Policies
 
 - License: `LICENSE` (MIT)

@@ -290,8 +290,9 @@ pub(super) const BODIES: [BodySpec; 14] = [
     },
     BodySpec {
         display_name: "Earth",
-        spice_target: "EARTH BARYCENTER",
-        visual_radius: 0.55,
+        spice_target: "EARTH",
+        // Reduced so Moon no longer intersects Earth at physical center distances.
+        visual_radius: 0.45,
         color: [0.3, 0.5, 1.0, 1.0],
         texture_file: "earth.jpg",
         spin_radians_per_second: sidereal_spin_radians_per_second(0.997_269_68),
@@ -305,7 +306,8 @@ pub(super) const BODIES: [BodySpec; 14] = [
     BodySpec {
         display_name: "Moon",
         spice_target: "MOON",
-        visual_radius: 0.18,
+        // Reduced to keep separation from Earth when orbit distance is true scale.
+        visual_radius: 0.14,
         color: [0.84, 0.84, 0.8, 1.0],
         texture_file: "moon.jpg",
         spin_radians_per_second: sidereal_spin_radians_per_second(27.321_661),
@@ -417,7 +419,8 @@ pub(super) const BODIES: [BodySpec; 14] = [
     BodySpec {
         display_name: "Pluto",
         spice_target: "PLUTO BARYCENTER",
-        visual_radius: 0.16,
+        // Reduced so Charon remains visibly separate at physical center distances.
+        visual_radius: 0.018,
         color: [0.82, 0.76, 0.68, 1.0],
         texture_file: "pluto.jpg",
         spin_radians_per_second: sidereal_spin_radians_per_second(-6.38723),
@@ -431,7 +434,8 @@ pub(super) const BODIES: [BodySpec; 14] = [
     BodySpec {
         display_name: "Charon",
         spice_target: "CHARON",
-        visual_radius: 0.08,
+        // Reduced so Charon remains visibly separate at physical center distances.
+        visual_radius: 0.009,
         color: [0.74, 0.74, 0.72, 1.0],
         texture_file: "charon.jpg",
         spin_radians_per_second: sidereal_spin_radians_per_second(-6.38723),
