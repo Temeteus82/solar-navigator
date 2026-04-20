@@ -294,9 +294,18 @@ pub fn fetch_horizons_heliocentric_position_au_with_client(
         .error_for_status()
         .map_err(|err| format!("request failed: {err}"))?;
 
-    let text = response
-        .text()
+    const MAX_HORIZONS_RESPONSE_BYTES: usize = 1_000_000;
+
+    let bytes = response
+        .bytes()
         .map_err(|err| format!("could not read response: {err}"))?;
+    if bytes.len() > MAX_HORIZONS_RESPONSE_BYTES {
+        return Err(format!(
+            "Horizons response too large ({} bytes)",
+            bytes.len()
+        ));
+    }
+    let text = String::from_utf8_lossy(&bytes).into_owned();
 
     parse_horizons_vector_row_au(&text)
 }
