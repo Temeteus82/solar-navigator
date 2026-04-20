@@ -1,13 +1,11 @@
 use super::types::{
-    AppStatus, AtmosphereLayer, BODIES, LightingPreset, LightingRig, RenderSettings,
-    SimulationState, StarsBackdrop,
+    AppStatus, AtmosphereLayer, BODIES, LightingRig, RenderSettings, SimulationState, StarsBackdrop,
 };
 use super::util::format_simulation_speed;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
 pub(super) fn apply_lighting_preset(
-    render_settings: Res<RenderSettings>,
     lighting_rig: Res<LightingRig>,
     mut ambient: ResMut<GlobalAmbientLight>,
     mut point_lights: Query<&mut PointLight>,
@@ -22,47 +20,20 @@ pub(super) fn apply_lighting_preset(
         return;
     };
 
-    match render_settings.preset {
-        LightingPreset::Navigation => {
-            ambient.brightness = 9.0;
+    // Realistic lighting: the Sun is the sole key light at scene origin.
+    // Inverse-square falloff produces a natural brightness gradient — Mercury
+    // and Venus are bright, outer planets are dim. Ambient and fill are kept
+    // low so the gradient is not washed out.
+    ambient.brightness = 0.3;
 
-            solar_key.intensity = 880_000_000.0;
-            solar_key.color = Color::srgb(1.0, 0.97, 0.9);
-            solar_key.shadows_enabled = false;
+    solar_key.intensity = 1_600_000_000.0;
+    solar_key.color = Color::srgb(1.0, 0.97, 0.9);
+    solar_key.shadows_enabled = false;
 
-            sky_fill.illuminance = 95.0;
-            sky_fill.color = Color::srgb(0.72, 0.8, 0.9);
+    sky_fill.illuminance = 5.0;
+    sky_fill.color = Color::srgb(0.3, 0.35, 0.45);
 
-            rim_fill.intensity = 0.0;
-        }
-        LightingPreset::Realistic => {
-            // Keep space mostly dark and let the Sun dominate. Lower non-solar fill
-            // preserves texture contrast so planets don't look washed out.
-            ambient.brightness = 1.2;
-
-            solar_key.intensity = 820_000_000.0;
-            solar_key.color = Color::srgb(1.0, 0.95, 0.86);
-            solar_key.shadows_enabled = false;
-
-            sky_fill.illuminance = 18.0;
-            sky_fill.color = Color::srgb(0.38, 0.44, 0.54);
-
-            rim_fill.intensity = 0.0;
-        }
-        LightingPreset::Cinematic => {
-            ambient.brightness = 5.0;
-
-            solar_key.intensity = 1_150_000_000.0;
-            solar_key.color = Color::srgb(1.0, 0.9, 0.78);
-            solar_key.shadows_enabled = false;
-
-            sky_fill.illuminance = 90.0;
-            sky_fill.color = Color::srgb(0.46, 0.6, 0.82);
-
-            rim_fill.intensity = 12_000.0;
-            rim_fill.color = Color::srgb(0.47, 0.55, 0.78);
-        }
-    }
+    rim_fill.intensity = 0.0;
 }
 
 #[allow(clippy::type_complexity)]
@@ -101,7 +72,6 @@ pub(super) fn sync_visibility_toggles(
 pub(super) fn update_window_title(
     app_status: Res<AppStatus>,
     simulation_state: Res<SimulationState>,
-    render_settings: Res<RenderSettings>,
     mut windows: Query<&mut Window, With<PrimaryWindow>>,
 ) {
     let Ok(mut window) = windows.single_mut() else {
@@ -120,8 +90,7 @@ pub(super) fn update_window_title(
         .unwrap_or_default();
 
     window.title = format!(
-        "Solar Navigator [{mode}] | {} lighting | Speed: {}{selection_label}",
-        render_settings.preset.label(),
+        "Solar Navigator [{mode}] | Speed: {}{selection_label}",
         format_simulation_speed(simulation_state.simulation_rate),
     );
 }
