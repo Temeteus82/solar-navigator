@@ -8,6 +8,7 @@ mod ui;
 mod util;
 
 use crate::ephemeris::{SpiceEphemeris, build_horizons_client};
+use bevy::light::PointLightShadowMap;
 use bevy::math::DVec3;
 use bevy::pbr::MaterialPlugin;
 use bevy::prelude::*;
@@ -40,6 +41,7 @@ pub(crate) fn run() {
 
     let mut app = App::new();
     app.insert_resource(ClearColor(Color::srgba(0.003, 0.005, 0.02, 1.0)))
+        .insert_resource(PointLightShadowMap { size: 2048 })
         .insert_resource(AppPaths { assets_root })
         .insert_resource(AppStatus {
             spice_enabled,
