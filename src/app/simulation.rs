@@ -1,8 +1,7 @@
 use super::types::{
-    AtmosphereLayer, AtmosphereOf, BODIES, BodyEntity, BodyRuntime, EphemerisResource,
-    HorizonsSyncState, KM_PER_AU, MAX_SIMULATION_RATE_MULTIPLIER, MIN_SIMULATION_RATE_MULTIPLIER,
-    OrbitCameraState, RenderSettings, SECONDS_PER_DAY, SimulationState,
-    au_to_scene_units_for_preset,
+    AU_TO_SCENE_UNITS, AtmosphereLayer, AtmosphereOf, BODIES, BodyEntity, BodyRuntime,
+    EphemerisResource, HorizonsSyncState, KM_PER_AU, MAX_SIMULATION_RATE_MULTIPLIER,
+    MIN_SIMULATION_RATE_MULTIPLIER, OrbitCameraState, SECONDS_PER_DAY, SimulationState,
 };
 use bevy::math::DVec3;
 use bevy::prelude::*;
@@ -60,13 +59,12 @@ pub(super) fn advance_simulation_time(
 pub(super) fn update_body_positions(
     time: Res<Time>,
     simulation_state: Res<SimulationState>,
-    render_settings: Res<RenderSettings>,
     ephemeris: NonSend<EphemerisResource>,
     horizons_sync: Res<HorizonsSyncState>,
     mut body_runtime: ResMut<BodyRuntime>,
     mut body_query: Query<(&BodyEntity, &mut Transform)>,
 ) {
-    let au_to_scene_units = au_to_scene_units_for_preset(render_settings.preset);
+    let au_to_scene_units = AU_TO_SCENE_UNITS;
     let frame_simulation_seconds = if simulation_state.paused {
         0.0
     } else {
