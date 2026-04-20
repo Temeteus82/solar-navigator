@@ -102,7 +102,7 @@ At runtime, assets are resolved in this order:
 
 ```bash
 cd /path/to/solar-navigator
-./scripts/sanity_and_bundle.sh
+./scripts/package_macos_arm64.sh
 ```
 
 Produces: `dist/Solar Navigator.app` (macOS only).
