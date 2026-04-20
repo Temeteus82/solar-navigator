@@ -5,9 +5,7 @@ use bevy::tasks::Task;
 use reqwest::blocking::Client;
 use std::path::PathBuf;
 
-pub(super) const AU_TO_SCENE_UNITS_NAVIGATION: f64 = 25.0;
-pub(super) const AU_TO_SCENE_UNITS_REALISTIC: f64 = 250.0;
-pub(super) const AU_TO_SCENE_UNITS_CINEMATIC: f64 = 18.0;
+pub(super) const AU_TO_SCENE_UNITS: f64 = 250.0;
 pub(super) const KM_PER_AU: f64 = 149_597_870.7;
 pub(super) const SECONDS_PER_DAY: f64 = 86_400.0;
 pub(super) const DEFAULT_SIMULATION_RATE_MULTIPLIER: f64 = 1.0;
@@ -33,31 +31,6 @@ pub(super) struct BodySpec {
     pub(super) emissive: [f32; 3],
     pub(super) atmosphere_scale: f32,
     pub(super) atmosphere_emissive: [f32; 4],
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum LightingPreset {
-    Navigation,
-    Realistic,
-    Cinematic,
-}
-
-impl LightingPreset {
-    pub(super) fn label(self) -> &'static str {
-        match self {
-            Self::Navigation => "Navigation",
-            Self::Realistic => "Realistic",
-            Self::Cinematic => "Cinematic",
-        }
-    }
-}
-
-pub(super) const fn au_to_scene_units_for_preset(preset: LightingPreset) -> f64 {
-    match preset {
-        LightingPreset::Navigation => AU_TO_SCENE_UNITS_NAVIGATION,
-        LightingPreset::Realistic => AU_TO_SCENE_UNITS_REALISTIC,
-        LightingPreset::Cinematic => AU_TO_SCENE_UNITS_CINEMATIC,
-    }
 }
 
 const fn sidereal_spin_radians_per_second(sidereal_period_days: f64) -> f32 {
@@ -175,7 +148,6 @@ impl Default for SimulationState {
 
 #[derive(Resource)]
 pub(super) struct RenderSettings {
-    pub(super) preset: LightingPreset,
     pub(super) stars_enabled: bool,
     pub(super) atmosphere_enabled: bool,
 }
@@ -183,7 +155,6 @@ pub(super) struct RenderSettings {
 impl Default for RenderSettings {
     fn default() -> Self {
         Self {
-            preset: LightingPreset::Realistic,
             stars_enabled: true,
             atmosphere_enabled: false,
         }
@@ -263,7 +234,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
     BodySpec {
         display_name: "Mercury",
         spice_target: "MERCURY BARYCENTER",
-        visual_radius: 0.26,
+        visual_radius: 0.06,
         color: [0.65, 0.62, 0.59, 1.0],
         texture_file: "mercury.jpg",
         spin_radians_per_second: sidereal_spin_radians_per_second(58.646),
@@ -277,7 +248,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
     BodySpec {
         display_name: "Venus",
         spice_target: "VENUS BARYCENTER",
-        visual_radius: 0.5,
+        visual_radius: 0.15,
         color: [0.92, 0.76, 0.4, 1.0],
         texture_file: "venus.jpg",
         spin_radians_per_second: sidereal_spin_radians_per_second(-243.025),
@@ -291,8 +262,9 @@ pub(super) const BODIES: [BodySpec; 14] = [
     BodySpec {
         display_name: "Earth",
         spice_target: "EARTH",
-        // Reduced so Moon no longer intersects Earth at physical center distances.
-        visual_radius: 0.45,
+        // 15× physical size at 250 AU/unit; Moon orbit (0.642 scene units) leaves
+        // a clear 0.44-unit gap between Earth and Moon surfaces.
+        visual_radius: 0.16,
         color: [0.3, 0.5, 1.0, 1.0],
         texture_file: "earth.jpg",
         spin_radians_per_second: sidereal_spin_radians_per_second(0.997_269_68),
@@ -306,8 +278,8 @@ pub(super) const BODIES: [BodySpec; 14] = [
     BodySpec {
         display_name: "Moon",
         spice_target: "MOON",
-        // Reduced to keep separation from Earth when orbit distance is true scale.
-        visual_radius: 0.14,
+        // 15× physical size at 250 AU/unit; proportional to Earth (Earth/Moon ≈ 3.67).
+        visual_radius: 0.044,
         color: [0.84, 0.84, 0.8, 1.0],
         texture_file: "moon.jpg",
         spin_radians_per_second: sidereal_spin_radians_per_second(27.321_661),
@@ -321,7 +293,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
     BodySpec {
         display_name: "Mars",
         spice_target: "MARS BARYCENTER",
-        visual_radius: 0.3,
+        visual_radius: 0.085,
         color: [0.8, 0.35, 0.2, 1.0],
         texture_file: "mars.jpg",
         spin_radians_per_second: sidereal_spin_radians_per_second(1.025_957),
@@ -335,7 +307,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
     BodySpec {
         display_name: "Ceres",
         spice_target: "CERES",
-        visual_radius: 0.14,
+        visual_radius: 0.04,
         color: [0.74, 0.74, 0.72, 1.0],
         texture_file: "ceres.jpg",
         spin_radians_per_second: sidereal_spin_radians_per_second(0.3781),
@@ -349,7 +321,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
     BodySpec {
         display_name: "Vesta",
         spice_target: "VESTA",
-        visual_radius: 0.11,
+        visual_radius: 0.03,
         color: [0.7, 0.66, 0.62, 1.0],
         texture_file: "vesta.jpg",
         spin_radians_per_second: sidereal_spin_radians_per_second(0.2226),
@@ -391,7 +363,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
     BodySpec {
         display_name: "Uranus",
         spice_target: "URANUS BARYCENTER",
-        visual_radius: 0.95,
+        visual_radius: 0.64,
         color: [0.57, 0.82, 0.92, 1.0],
         texture_file: "uranus.jpg",
         spin_radians_per_second: sidereal_spin_radians_per_second(-0.71833),
@@ -405,7 +377,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
     BodySpec {
         display_name: "Neptune",
         spice_target: "NEPTUNE BARYCENTER",
-        visual_radius: 0.92,
+        visual_radius: 0.62,
         color: [0.35, 0.45, 0.95, 1.0],
         texture_file: "neptune.jpg",
         spin_radians_per_second: sidereal_spin_radians_per_second(0.67125),
@@ -419,7 +391,8 @@ pub(super) const BODIES: [BodySpec; 14] = [
     BodySpec {
         display_name: "Pluto",
         spice_target: "PLUTO BARYCENTER",
-        // Reduced so Charon remains visibly separate at physical center distances.
+        // Capped below 15× physical to keep Charon visibly separate
+        // (Pluto–Charon orbit is only 0.033 scene units at 250 AU/unit).
         visual_radius: 0.018,
         color: [0.82, 0.76, 0.68, 1.0],
         texture_file: "pluto.jpg",
@@ -434,7 +407,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
     BodySpec {
         display_name: "Charon",
         spice_target: "CHARON",
-        // Reduced so Charon remains visibly separate at physical center distances.
+        // Capped below 15× physical to keep separation from Pluto.
         visual_radius: 0.009,
         color: [0.74, 0.74, 0.72, 1.0],
         texture_file: "charon.jpg",
@@ -453,19 +426,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn au_to_scene_units_for_preset_uses_expected_scales() {
-        assert_eq!(
-            au_to_scene_units_for_preset(LightingPreset::Navigation),
-            AU_TO_SCENE_UNITS_NAVIGATION
-        );
-        assert_eq!(
-            au_to_scene_units_for_preset(LightingPreset::Realistic),
-            AU_TO_SCENE_UNITS_REALISTIC
-        );
-        assert_eq!(
-            au_to_scene_units_for_preset(LightingPreset::Cinematic),
-            AU_TO_SCENE_UNITS_CINEMATIC
-        );
+    fn au_to_scene_units_is_realistic_scale() {
+        assert_eq!(AU_TO_SCENE_UNITS, 250.0);
     }
 
     #[test]
