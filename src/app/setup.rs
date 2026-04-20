@@ -12,9 +12,11 @@ use super::util::{
 use crate::ephemeris::{
     fetch_horizons_heliocentric_position_au_with_client, horizons_command_for_target,
 };
+use bevy::core_pipeline::prepass::{DepthPrepass, NormalPrepass};
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::light::{GeneratedEnvironmentMapLight, NotShadowCaster};
 use bevy::math::DVec3;
+use bevy::pbr::ScreenSpaceAmbientOcclusion;
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, futures_lite::future};
@@ -58,6 +60,12 @@ pub(super) fn setup_scene(
         },
         Transform::from_translation(camera_translation).looking_at(Vec3::ZERO, Vec3::Y),
         MainCamera,
+        // Depth and normal prepasses feed SSAO.
+        DepthPrepass,
+        NormalPrepass,
+        // SSAO adds subtle ambient occlusion at sphere edges and
+        // the planet-space terminator boundary.
+        ScreenSpaceAmbientOcclusion::default(),
     ));
 
     let solar_key = commands
@@ -66,7 +74,9 @@ pub(super) fn setup_scene(
                 intensity: 1_600_000_000.0,
                 range: 14_000.0,
                 color: Color::srgb(1.0, 0.97, 0.9),
-                shadows_enabled: false,
+                // Cast shadows so bodies occlude each other (eclipse geometry
+                // is visible when zoomed into the Earth–Moon or Pluto–Charon systems).
+                shadows_enabled: true,
                 ..default()
             },
             Transform::from_translation(Vec3::ZERO),

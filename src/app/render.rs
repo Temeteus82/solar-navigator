@@ -28,7 +28,7 @@ pub(super) fn apply_lighting_preset(
 
     solar_key.intensity = 1_600_000_000.0;
     solar_key.color = Color::srgb(1.0, 0.97, 0.9);
-    solar_key.shadows_enabled = false;
+    solar_key.shadows_enabled = true;
 
     sky_fill.illuminance = 5.0;
     sky_fill.color = Color::srgb(0.3, 0.35, 0.45);
