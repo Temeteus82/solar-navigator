@@ -155,10 +155,12 @@ pub(super) fn equirectangular_to_cubemap_image(source: &Image, face_size: u32) -
 
                 let src_x = ((u * src_width as f32) as u32).min(src_width.saturating_sub(1));
                 let src_y = ((v * src_height as f32) as u32).min(src_height.saturating_sub(1));
-                let src_index = ((src_y * src_width + src_x) * 4) as usize;
+                let src_index =
+                    (src_y as usize * src_width as usize + src_x as usize) * 4;
 
                 let dst_layer_row = face * face_size + y;
-                let dst_index = ((dst_layer_row * face_size + x) * 4) as usize;
+                let dst_index =
+                    (dst_layer_row as usize * face_size as usize + x as usize) * 4;
                 cubemap_data[dst_index..dst_index + 4]
                     .copy_from_slice(&src_data[src_index..src_index + 4]);
             }
