@@ -43,7 +43,7 @@ pub(super) fn setup_scene(
 ) {
     commands.insert_resource(GlobalAmbientLight {
         color: Color::WHITE,
-        brightness: 1.2,
+        brightness: 0.3,
         ..default()
     });
 
@@ -63,11 +63,9 @@ pub(super) fn setup_scene(
     let solar_key = commands
         .spawn((
             PointLight {
-                // Scale-aware key light: calibrated so planets remain visibly lit
-                // across preset-dependent orbital distance scales.
-                intensity: 1_200_000_000.0,
+                intensity: 1_600_000_000.0,
                 range: 14_000.0,
-                color: Color::srgb(1.0, 0.95, 0.86),
+                color: Color::srgb(1.0, 0.97, 0.9),
                 shadows_enabled: false,
                 ..default()
             },
@@ -78,8 +76,8 @@ pub(super) fn setup_scene(
     let sky_fill = commands
         .spawn((
             DirectionalLight {
-                illuminance: 60.0,
-                color: Color::srgb(0.5, 0.58, 0.7),
+                illuminance: 5.0,
+                color: Color::srgb(0.3, 0.35, 0.45),
                 shadows_enabled: false,
                 ..default()
             },
@@ -263,7 +261,9 @@ pub(super) fn sync_environment_lighting_from_sky(
             .entity(camera_entity)
             .insert(GeneratedEnvironmentMapLight {
                 environment_map: cubemap_handle.clone(),
-                intensity: 3_200.0,
+                // Kept low so the solar key-light inverse-square falloff
+                // creates a realistic brightness gradient across the solar system.
+                intensity: 400.0,
                 rotation: Quat::IDENTITY,
                 affects_lightmapped_mesh_diffuse: true,
             });

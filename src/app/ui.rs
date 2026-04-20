@@ -1,7 +1,7 @@
 use super::types::{
-    AppStatus, BODIES, HorizonsSyncState, MAX_SIMULATION_RATE_MULTIPLIER,
+    AU_TO_SCENE_UNITS, AppStatus, BODIES, HorizonsSyncState, MAX_SIMULATION_RATE_MULTIPLIER,
     MIN_SIMULATION_RATE_MULTIPLIER, OrbitCameraState, RenderSettings, SECONDS_PER_DAY,
-    SIDE_PANEL_WIDTH_PX, SimulationState, TextureStatus, au_to_scene_units_for_preset,
+    SIDE_PANEL_WIDTH_PX, SimulationState, TextureStatus,
 };
 use super::util::format_simulation_speed;
 use bevy::prelude::*;
@@ -94,29 +94,8 @@ pub(super) fn draw_side_panel(
             );
 
             ui.separator();
-            ui.label("Lighting preset:");
-            egui::ComboBox::from_id_salt("lighting_preset")
-                .selected_text(render_settings.preset.label())
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(
-                        &mut render_settings.preset,
-                        super::types::LightingPreset::Navigation,
-                        super::types::LightingPreset::Navigation.label(),
-                    );
-                    ui.selectable_value(
-                        &mut render_settings.preset,
-                        super::types::LightingPreset::Realistic,
-                        super::types::LightingPreset::Realistic.label(),
-                    );
-                    ui.selectable_value(
-                        &mut render_settings.preset,
-                        super::types::LightingPreset::Cinematic,
-                        super::types::LightingPreset::Cinematic.label(),
-                    );
-                });
             ui.small(format!(
-                "Distance scale: 1 AU = {:.1} units",
-                au_to_scene_units_for_preset(render_settings.preset)
+                "Distance scale: 1 AU = {AU_TO_SCENE_UNITS:.1} units (realistic)"
             ));
 
             ui.checkbox(&mut render_settings.stars_enabled, "Starfield backdrop");
