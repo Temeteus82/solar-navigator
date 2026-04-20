@@ -43,4 +43,4 @@ bevy_egui = { version = "0.39.1", default-features = false, features = [
 ] }
 chrono = { version = "0.4.42", default-features = false, features = ["clock", "std"] }
 reqwest = { version = "0.11.27", default-features = false, features = ["blocking", "rustls-tls"] }
-rust-spice = { version = "0.7.8", default-features = false, features = ["download", "lock"], optional = true }
+rust-spice = { version = "0.7.8", default-features = false, features = ["lock"], optional = true }
