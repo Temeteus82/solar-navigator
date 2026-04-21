@@ -102,21 +102,17 @@ impl SpiceEphemeris {
         let utc_now = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let base_et = lock.str2et(&spice_utc_timestamp_input(&utc_now));
 
-        let status_line = format!(
-            "SPICE mode active: loaded {}, {}{}{}",
-            leap_seconds.display(),
-            planetary_ephemeris.display(),
-            if optional_text_pck.is_file() {
-                format!(", {}", optional_text_pck.display())
-            } else {
-                String::new()
-            },
-            if optional_gravity.is_file() {
-                format!(", {}", optional_gravity.display())
-            } else {
-                String::new()
-            }
-        );
+        let mut loaded_kernels = vec![
+            leap_seconds.display().to_string(),
+            planetary_ephemeris.display().to_string(),
+        ];
+        if optional_text_pck.is_file() {
+            loaded_kernels.push(optional_text_pck.display().to_string());
+        }
+        if optional_gravity.is_file() {
+            loaded_kernels.push(optional_gravity.display().to_string());
+        }
+        let status_line = format!("SPICE mode active: loaded {}", loaded_kernels.join(", "));
 
         Self {
             state: EphemerisState::Spice {
@@ -356,28 +352,52 @@ fn parse_horizons_vector_row_au(raw: &str) -> Result<[f64; 3], String> {
     Err(format!("missing Horizons vector data block ({first_line})"))
 }
 
+/// Parameters describing a satellite's fallback orbit around its primary.
+struct SatelliteOrbit {
+    primary: &'static str,
+    semi_major_axis_km: f64,
+    period_days: f64,
+    phase_radians: f64,
+    z_wobble_factor: f64,
+    z_wobble_frequency: f64,
+}
+
+const MOON_ORBIT: SatelliteOrbit = SatelliteOrbit {
+    primary: "EARTH",
+    semi_major_axis_km: MOON_SEMI_MAJOR_AXIS_KM,
+    period_days: 27.321661,
+    phase_radians: 0.35,
+    z_wobble_factor: 0.12,
+    z_wobble_frequency: 0.5,
+};
+
+const CHARON_ORBIT: SatelliteOrbit = SatelliteOrbit {
+    primary: "PLUTO",
+    semi_major_axis_km: CHARON_SEMI_MAJOR_AXIS_KM,
+    period_days: 6.38723,
+    phase_radians: 1.1,
+    z_wobble_factor: 0.03,
+    z_wobble_frequency: 1.4,
+};
+
+fn fallback_satellite_position_au(orbit: &SatelliteOrbit, elapsed_days: f64) -> [f64; 3] {
+    let primary = fallback_planet_position_au(orbit.primary, elapsed_days);
+    let radius_au = orbit.semi_major_axis_km / KM_PER_AU;
+    let theta = std::f64::consts::TAU * elapsed_days / orbit.period_days + orbit.phase_radians;
+
+    [
+        primary[0] + radius_au * theta.cos(),
+        primary[1] + radius_au * theta.sin(),
+        primary[2] + radius_au * orbit.z_wobble_factor * (theta * orbit.z_wobble_frequency).sin(),
+    ]
+}
+
 fn fallback_position_au(target: &str, elapsed_days: f64) -> [f64; 3] {
     if target.eq_ignore_ascii_case("MOON") {
-        let earth = fallback_planet_position_au("EARTH", elapsed_days);
-        let moon_radius_au = MOON_SEMI_MAJOR_AXIS_KM / KM_PER_AU;
-        let theta = std::f64::consts::TAU * elapsed_days / 27.321661 + 0.35;
-
-        let x = earth[0] + moon_radius_au * theta.cos();
-        let y = earth[1] + moon_radius_au * theta.sin();
-        let z = earth[2] + moon_radius_au * 0.12 * (theta * 0.5).sin();
-
-        return [x, y, z];
+        return fallback_satellite_position_au(&MOON_ORBIT, elapsed_days);
     }
     if target.eq_ignore_ascii_case("CHARON") {
-        let pluto = fallback_planet_position_au("PLUTO", elapsed_days);
-        let charon_radius_au = CHARON_SEMI_MAJOR_AXIS_KM / KM_PER_AU;
-        let theta = std::f64::consts::TAU * elapsed_days / 6.38723 + 1.1;
-
-        let x = pluto[0] + charon_radius_au * theta.cos();
-        let y = pluto[1] + charon_radius_au * theta.sin();
-        let z = pluto[2] + charon_radius_au * 0.03 * (theta * 1.4).sin();
-
-        return [x, y, z];
+        return fallback_satellite_position_au(&CHARON_ORBIT, elapsed_days);
     }
 
     fallback_planet_position_au(target, elapsed_days)

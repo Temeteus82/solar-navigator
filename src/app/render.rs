@@ -36,36 +36,27 @@ pub(super) fn apply_lighting_preset(
     rim_fill.intensity = 0.0;
 }
 
-#[allow(clippy::type_complexity)]
 pub(super) fn sync_visibility_toggles(
     render_settings: Res<RenderSettings>,
-    mut visibility_query: Query<
-        (
-            &mut Visibility,
-            Option<&AtmosphereLayer>,
-            Option<&StarsBackdrop>,
-        ),
-        Or<(With<AtmosphereLayer>, With<StarsBackdrop>)>,
-    >,
+    mut atmosphere_query: Query<&mut Visibility, (With<AtmosphereLayer>, Without<StarsBackdrop>)>,
+    mut stars_query: Query<&mut Visibility, (With<StarsBackdrop>, Without<AtmosphereLayer>)>,
 ) {
-    let atmosphere_visibility = if render_settings.atmosphere_enabled {
-        Visibility::Visible
-    } else {
-        Visibility::Hidden
-    };
-    let stars_visibility = if render_settings.stars_enabled {
-        Visibility::Visible
-    } else {
-        Visibility::Hidden
-    };
+    let atmosphere_visibility = visibility_for(render_settings.atmosphere_enabled);
+    let stars_visibility = visibility_for(render_settings.stars_enabled);
 
-    for (mut visibility, atmosphere, stars) in &mut visibility_query {
-        if atmosphere.is_some() {
-            *visibility = atmosphere_visibility;
-        }
-        if stars.is_some() {
-            *visibility = stars_visibility;
-        }
+    for mut visibility in &mut atmosphere_query {
+        *visibility = atmosphere_visibility;
+    }
+    for mut visibility in &mut stars_query {
+        *visibility = stars_visibility;
+    }
+}
+
+fn visibility_for(enabled: bool) -> Visibility {
+    if enabled {
+        Visibility::Visible
+    } else {
+        Visibility::Hidden
     }
 }
 

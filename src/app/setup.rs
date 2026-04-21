@@ -288,13 +288,7 @@ pub(super) fn start_horizons_sync(
     horizons_http_client: Option<Res<HorizonsHttpClient>>,
     mut horizons_sync: ResMut<HorizonsSyncState>,
 ) {
-    horizons_sync.enabled = false;
-    horizons_sync.failures.clear();
-    horizons_sync.per_body_au_offset = vec![DVec3::ZERO; BODIES.len()];
-    horizons_sync.task = None;
-    horizons_sync.retry_requested = false;
-    horizons_sync.retry_attempt = 0;
-    horizons_sync.next_retry_deadline_seconds = None;
+    *horizons_sync = HorizonsSyncState::new(BODIES.len());
 
     let _ = queue_horizons_sync_task(
         &app_status,
