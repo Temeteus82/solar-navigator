@@ -1,13 +1,28 @@
-# Solar Navigator (Rust + SPICE/Fallback)
+# Solar Navigator — An AI Agent Coding Experiment
 
-Cross-platform desktop app for a 3D solar-system navigator (macOS, Linux, Windows):
+> **This project exists to test and demonstrate the capabilities of AI coding agents.**
+> Every line of code, every architectural decision, and every feature in this repository
+> has been written collaboratively with AI agents — no manual coding by the human author.
+> The goal is to discover how far a non-trivial, real-world Rust application can be taken
+> when the developer's role is purely to direct, review, and iterate with AI tools.
+
+This is a 3D solar-system navigator written in Rust + Bevy. It is both a genuinely useful
+application and a live benchmark of what AI agents can build, maintain, and improve in a
+complex systems-programming project.
+
+---
+
+## Application Features
 
 - 3D scene with interactive orbit camera (`bevy` + `bevy_egui`)
 - SPICE-based planet/moon ephemerides (`rust-spice` + NAIF kernels)
 - Side-panel target search with smooth camera fly-to
-- Texture-driven rendering with graceful fallback when textures are missing
-- PBR material tuning, emissive sun, atmosphere halos, and starfield backdrop / Milky Way sky
-- Analytic fallback orbits when kernels are not present yet
+- Texture-driven PBR rendering with atmosphere halos and Milky Way starfield
+- Realistic solar lighting with inverse-square falloff across the solar system
+- Point-light shadow maps and screen-space ambient occlusion (SSAO)
+- Analytic fallback orbits when SPICE kernels are absent
+
+---
 
 ## Quick Start (Portable Build)
 
@@ -18,8 +33,6 @@ cd /path/to/solar-navigator
 ./scripts/download_textures_minor_bodies_science.sh
 cargo run --release --no-default-features
 ```
-
-If you are already in the project directory, skip the `cd` step.
 
 ## Quick Start (macOS SPICE Build)
 
@@ -32,8 +45,6 @@ cd /path/to/solar-navigator
 ./scripts/generate_app_icon.sh
 cargo run --release
 ```
-
-The default Cargo feature set enables SPICE (`--features spice`).
 
 ## Quick Start (Linux x86_64 SPICE Build)
 
@@ -57,23 +68,31 @@ bash ./scripts/download_textures_minor_bodies_science.sh
 cargo run --release --features spice
 ```
 
-The texture and kernel download scripts are Bash scripts; run them from Git Bash/WSL, or invoke them from PowerShell via `bash ...` as shown above.
+The texture and kernel download scripts are Bash scripts; run them from Git Bash/WSL, or
+invoke them from PowerShell via `bash ...` as shown above.
+
+---
 
 ## Controls
 
-- Right mouse drag + wheel: orbit/zoom camera
-- Left side panel: search targets, jump directly, and switch lighting presets
-- `Space`: pause/unpause simulation
-- `Up`: speed up simulation time
-- `Down`: slow down simulation time
-- `Backspace`: reset simulation state and camera target
+| Input | Action |
+|-------|--------|
+| Right drag / scroll | Orbit and zoom camera |
+| Shift + left drag | Pan camera |
+| `Space` | Pause / unpause simulation |
+| `Up` / `Down` | Increase / decrease simulation speed |
+| `Backspace` | Reset simulation state and camera |
+| Side panel | Search targets, select body, jump camera |
 
 ## Modes
 
-- **SPICE mode**: used when required kernels exist under `assets/spice`.
-- **Fallback mode**: used automatically when kernels are absent, or when the app is built with `--no-default-features`.
+- **SPICE mode** — used when required kernels exist under `assets/spice/`.
+- **Fallback mode** — analytic Keplerian orbits; used automatically when kernels are absent
+  or when built with `--no-default-features`.
 
-The window title and overlay show current mode and selection.
+The window title shows the current mode and selected body.
+
+---
 
 ## Quality Checks
 
@@ -89,6 +108,8 @@ cargo clippy --all-targets --no-default-features -- -D warnings
 cargo test --all-targets --no-default-features
 ```
 
+---
+
 ## Asset Resolution
 
 At runtime, assets are resolved in this order:
@@ -98,77 +119,48 @@ At runtime, assets are resolved in this order:
 3. macOS app bundle path (`Solar Navigator.app/Contents/Resources/assets`)
 4. Source-tree fallback (`<repo>/assets`)
 
-## Bundle Build (macOS)
+---
+
+## Bundle / Package Builds
 
 ```bash
-cd /path/to/solar-navigator
-./scripts/package_macos_arm64.sh
+# macOS
+./scripts/package_macos_arm64.sh           # → dist/Solar Navigator.app
+
+# Linux
+./scripts/package_linux.sh                 # → dist/linux/ (.tar.gz, .deb, .AppImage)
+WITH_SPICE=1 ./scripts/package_linux.sh    # SPICE-enabled build
+
+# Windows (PowerShell)
+.\scripts\package_windows.ps1              # → dist/windows/ (.zip, .msi)
+.\scripts\package_windows.ps1 -WithSpice
 ```
-
-Produces: `dist/Solar Navigator.app` (macOS only).
-
-## Packaging (Linux)
-
-```bash
-cd /path/to/solar-navigator
-./scripts/package_linux.sh
-```
-
-Outputs are written to `dist/linux`:
-- `.tar.gz` portable archive (always)
-- `.deb` package (if `dpkg-deb` is installed)
-- `.AppImage` (if `appimagetool` is installed)
-
-Use `WITH_SPICE=1 ./scripts/package_linux.sh` to package a SPICE-enabled build.
 
 ## Linux Distro Coverage
 
-CI validates native builds on major Linux distributions:
-- Ubuntu 24.04
-- Debian 12
-- Fedora 42
-- Arch Linux (latest)
+CI validates native builds on:
 
-For each Linux distro above, CI runs both:
-- portable mode (`--no-default-features`)
-- SPICE mode (`--no-default-features --features spice`)
+- Ubuntu 24.04 · Debian 12 · Fedora 42 · Arch Linux
 
-Windows CI also validates both portable and SPICE modes on native `windows-latest`.
+Each distro is tested in both portable (`--no-default-features`) and SPICE modes.
 
-## Packaging (Windows)
-
-```powershell
-Set-Location C:\path\to\solar-navigator
-.\scripts\package_windows.ps1
-```
-
-Outputs are written to `dist/windows`:
-- `.zip` portable package (always)
-- `.msi` installer (if WiX `wix` CLI is installed)
-
-Use `.\scripts\package_windows.ps1 -WithSpice` for a SPICE-enabled package.
+---
 
 ## Asset Notes
 
-- `scripts/setup_cspice_macos_arm64.sh` installs an arm64 CSPICE toolkit under `vendor/cspice` and is required for native Apple Silicon SPICE linking.
-- `scripts/setup_cspice_linux_x86_64.sh` installs Linux x86_64 CSPICE under `vendor/cspice`.
-- `scripts/setup_cspice_windows_x86_64.ps1` installs Windows x86_64 CSPICE under `vendor/cspice`.
-- Linux CI validates both portable and SPICE modes across Ubuntu, Debian, Fedora, and Arch.
-- Windows CI validates portable mode and SPICE mode on native windows-latest.
-- `scripts/generate_app_icon.sh` creates `assets/icon/AppIcon.icns` and `assets/icon/AppIcon.iconset/` for macOS app packaging.
-- SPICE kernels are downloaded from NAIF/JPL public servers.
-- Planet textures in the provided script come from Solar System Scope. Check and follow their latest terms/attribution requirements before redistribution.
+- Textures from Solar System Scope — check their terms before redistributing.
+- SPICE kernels downloaded from NAIF/JPL public servers.
+- Texture filenames expected by the app are documented in `assets/textures/README.md`.
+- `scripts/generate_app_icon.sh` creates `assets/icon/AppIcon.icns` for macOS packaging.
 
-Texture filenames expected by the app are documented in `assets/textures/README.md`.
-
-## Known Issues
-
-- **Moon/Earth visual scale mismatch (open bug):** Even with physically scaled center-to-center distances, the current body render sizes can still make the Moon appear unrealistically close to Earth in some camera/preset combinations. A separate visual-scaling model (independent from orbital distance scale) is still needed.
+---
 
 ## Project Policies
 
-- License: `LICENSE` (MIT)
-- Third-party notices: `THIRD_PARTY_NOTICES.md`
-- Asset attribution: `ASSET_ATTRIBUTION.md`
-- Contributing guide: `CONTRIBUTING.md`
-- Security policy: `.github/SECURITY.md`
+| Document | Purpose |
+|----------|---------|
+| `LICENSE` | MIT |
+| `THIRD_PARTY_NOTICES.md` | Third-party dependency notices |
+| `ASSET_ATTRIBUTION.md` | Texture / asset attributions |
+| `CONTRIBUTING.md` | Contribution guide |
+| `.github/SECURITY.md` | Security policy |

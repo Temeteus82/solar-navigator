@@ -2,6 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Project Identity
+
+Solar Navigator is an **AI agent coding experiment**. Every feature is co-created with AI
+coding agents; the human author's role is to direct, review, and iterate — not to write code
+manually. When making changes, favour clean, idiomatic Rust that a future agent can read and
+extend with minimal context.
+
 ## Commands
 
 ### Build and run
@@ -99,9 +106,14 @@ The same sign convention applies to the Horizons sync offset stored in `Horizons
 
 On startup (SPICE mode only), `setup::start_horizons_sync` spawns an async task that calls NASA JPL Horizons for each body's current heliocentric position and computes per-body AU offsets relative to what SPICE reports (`per_body_au_offset`). These offsets are added each frame in `update_body_positions` to correct for any kernel/reference-frame drift. The task retries up to 5 times with exponential backoff (1 s, 2 s, 4 s … capped at 30 s). Manual retry is available via the UI button.
 
-### Lighting presets and AU scale
+### Lighting and AU scale
 
-`LightingPreset` (Navigation / Realistic / Cinematic) controls both the lighting rig intensities (`render.rs:apply_lighting_preset`) and the AU-to-scene-unit scale (`types.rs:au_to_scene_units_for_preset`). Navigation uses 25 units/AU, Realistic 250, Cinematic 18. Changing the preset stretches or compresses the entire solar system to different visual scales.
+The app uses a single Realistic lighting mode. `AU_TO_SCENE_UNITS = 250.0` is the fixed
+scale constant in `types.rs`. `render.rs:apply_lighting_preset` configures the solar key
+light (1.6 GW point light at origin, `shadows_enabled = true`), a faint directional sky
+fill (5 lux), and a low ambient (0.3) so the Sun's inverse-square falloff creates a visible
+brightness gradient from Mercury out to Neptune. Body visual radii are set to ~15× their
+physical size so they are visible at solar-system scale without being artificially huge.
 
 ### Asset resolution order
 
