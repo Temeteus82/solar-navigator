@@ -1,0 +1,54 @@
+# Cline Rules — Solar Navigator
+
+## Project Identity
+Solar Navigator is an **AI agent coding experiment**: every feature is co-created with AI
+coding agents; the human author directs and reviews only. Produce clean, idiomatic Rust
+that future agents can extend with minimal context.
+
+## Stack
+- Rust 2024 · Bevy 0.18.1 ECS · bevy_egui · wgpu v27
+- Optional `spice` Cargo feature → `rust-spice` → NAIF CSPICE C library
+- `reqwest` for NASA JPL Horizons HTTP API
+- WGSL custom atmosphere shader at `assets/shaders/planet_atmosphere.wgsl`
+
+## Module Map
+| File | Responsibility |
+|------|---------------|
+| `src/main.rs` | Entry point — calls `app::run()` |
+| `src/ephemeris.rs` | `SpiceEphemeris` + Horizons HTTP client (no Bevy) |
+| `src/app/mod.rs` | `App` construction, plugin registration, system scheduling |
+| `src/app/types.rs` | All `Resource`s, `Component`s, and `BODIES` constant array |
+| `src/app/setup.rs` | Startup: spawn scene, load textures, start Horizons sync task |
+| `src/app/simulation.rs` | Update: keyboard input, time advance, body transforms |
+| `src/app/camera.rs` | Update: orbit camera, fly-to animation, body tracking |
+| `src/app/render.rs` | Update: lighting rig, visibility toggles, window title |
+| `src/app/materials.rs` | `PlanetAtmosphereMaterial` (Bevy `ExtendedMaterial` + WGSL) |
+| `src/app/ui.rs` | `egui` side panel (target search, sim speed, body list) |
+| `src/app/util.rs` | Asset resolution, cubemap conversion, `format_simulation_speed` |
+
+## Hard Rules
+1. `pub(super)` for everything inside `app/` — no leakage.
+2. Resources defined in `types.rs`; systems defined in their owning module.
+3. Both feature variants must pass at all times:
+   ```bash
+   cargo check --all-targets
+   cargo check --all-targets --no-default-features
+   cargo clippy --all-targets -- -D warnings
+   cargo clippy --all-targets --no-default-features -- -D warnings
+   cargo test --all-targets --no-default-features
+   ```
+4. No `unwrap()` / `expect()` in non-test production code.
+5. Every `#[allow(clippy::...)]` must have a comment explaining why it is safe.
+
+## Coordinate Remap (SPICE → Bevy)
+```
+scene.x =  spice.x * AU_TO_SCENE_UNITS   // X unchanged
+scene.y =  spice.z * AU_TO_SCENE_UNITS   // ecliptic north → Bevy Y
+scene.z = -spice.y * AU_TO_SCENE_UNITS   // negated, right-handed
+```
+`AU_TO_SCENE_UNITS = 250.0` — a fixed constant, not runtime-configurable.
+
+## Adding a New Body
+1. Add `BodySpec` entry to `BODIES` in `types.rs`.
+2. Add `horizons_command_for_target` mapping in `ephemeris.rs`.
+3. If SPICE kernels cover it, add it to `spice_supports_target` in `ephemeris.rs`.

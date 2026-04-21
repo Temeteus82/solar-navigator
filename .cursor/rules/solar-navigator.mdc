@@ -1,0 +1,67 @@
+---
+description: Solar Navigator — AI agent coding experiment (Rust + Bevy)
+globs: ["**/*.rs", "Cargo.toml", "**/*.wgsl", "**/*.sh", "**/*.ps1"]
+alwaysApply: true
+---
+
+# Solar Navigator — Cursor Rules
+
+## Project Identity
+This is an **AI agent coding experiment**. Every feature is co-created with AI coding agents;
+the human author's role is to direct and review, not write code manually. Favour clean,
+idiomatic Rust that future agents can extend with minimal context.
+
+## Tech Stack
+- **Rust** (2024 edition) + **Bevy 0.18.1** (ECS game engine)
+- **bevy_egui** for the side panel UI
+- **rust-spice** (optional `spice` feature) wrapping NAIF CSPICE for ephemerides
+- **reqwest** for NASA JPL Horizons HTTP queries
+- **wgpu v27** / Metal (macOS) rendering backend
+
+## Module Layout
+```
+src/
+  main.rs          — calls app::run()
+  ephemeris.rs     — SpiceEphemeris + Horizons HTTP client (no Bevy)
+  app/
+    mod.rs         — Bevy App construction; registers all systems and resources
+    types.rs       — every Resource, Component, and the BODIES constant array
+    setup.rs       — Startup systems: scene spawn, texture loading, Horizons sync
+    simulation.rs  — Update systems: keyboard input, time advance, body positions
+    camera.rs      — Update systems: orbit camera, jump/fly-to, tracking
+    render.rs      — Update systems: lighting, visibility, window title
+    materials.rs   — PlanetAtmosphereMaterial (custom WGSL shader)
+    ui.rs          — egui side panel
+    util.rs        — asset resolution, image helpers, format_simulation_speed
+```
+
+## Key Conventions
+- All `app/` types are `pub(super)` — nothing leaks out of the module.
+- Bevy resources are defined in `types.rs`; systems live in the module that owns them.
+- `BODIES` in `types.rs` is the canonical static array of all 14 rendered bodies.
+- Both feature variants must compile and pass clippy/tests:
+  - `cargo check --all-targets`
+  - `cargo check --all-targets --no-default-features`
+- `clippy -D warnings` is enforced in CI — no `#[allow]` without a comment explaining why.
+
+## Coordinate System
+SPICE `ECLIPJ2000` (Z = ecliptic north) is remapped to Bevy Y-up:
+```
+scene_x =  spice_x * AU_TO_SCENE_UNITS
+scene_y =  spice_z * AU_TO_SCENE_UNITS   ← SPICE Z → Bevy Y
+scene_z = -spice_y * AU_TO_SCENE_UNITS   ← negated to preserve right-handedness
+```
+
+## Build Commands
+```bash
+cargo run --release --no-default-features   # portable, always works
+cargo run --release                         # SPICE build (needs vendor/cspice)
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo test --all-targets
+```
+
+## Adding a Body
+1. Add a `BodySpec` entry to `BODIES` in `types.rs`.
+2. Add a `horizons_command_for_target` mapping in `ephemeris.rs`.
+3. Mark it in `spice_supports_target` if SPICE kernels cover it.

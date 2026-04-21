@@ -1,0 +1,49 @@
+# Windsurf Rules — Solar Navigator
+
+## Project Identity
+Solar Navigator is an **AI agent coding experiment**. Every feature is co-created with AI
+coding agents; the human author's role is to direct and review, not write code manually.
+Write clean, idiomatic Rust that future agents can extend with minimal context.
+
+## Tech Stack
+- Rust 2024 edition · Bevy 0.18.1 · bevy_egui · wgpu v27
+- Optional `spice` feature: `rust-spice` wrapping NAIF CSPICE C library
+- `reqwest` for NASA JPL Horizons HTTP queries
+- Custom WGSL shader: `assets/shaders/planet_atmosphere.wgsl`
+
+## Source Layout
+```
+src/
+  main.rs / ephemeris.rs          — entry point and ephemeris logic (no Bevy)
+  app/mod.rs                      — Bevy App, resources, system registration
+  app/types.rs                    — all Resources, Components, BODIES constant
+  app/setup.rs                    — Startup systems (scene, textures, sync)
+  app/simulation.rs               — Update systems (input, time, positions)
+  app/camera.rs                   — Update systems (orbit camera, fly-to)
+  app/render.rs                   — Update systems (lighting, visibility)
+  app/materials.rs                — atmosphere shader material
+  app/ui.rs                       — egui side panel
+  app/util.rs                     — helpers (asset path, image, formatting)
+```
+
+## Coding Rules
+- Everything inside `app/` is `pub(super)` — no public API leaks out.
+- Types/resources → `types.rs`. Systems → the module that logically owns them.
+- `BODIES` in `types.rs` is the single source of truth for all 14 rendered bodies.
+- Both Cargo feature variants must compile and lint cleanly at all times:
+  - Default (SPICE): `cargo check --all-targets`
+  - Portable: `cargo check --all-targets --no-default-features`
+- `clippy -D warnings` enforced in CI. Every `#[allow]` needs a justification comment.
+- No `unwrap()` in production paths — use `?`, `if let`, or `else { return }`.
+
+## Coordinate System
+SPICE `ECLIPJ2000` → Bevy Y-up:
+- `scene_x = spice_x * scale`
+- `scene_y = spice_z * scale`  (SPICE Z is ecliptic north → Bevy Y)
+- `scene_z = -spice_y * scale` (negated to keep right-handed axes)
+
+## Quick Build
+```bash
+cargo run --release --no-default-features   # always works
+cargo run --release                         # needs vendor/cspice
+```
