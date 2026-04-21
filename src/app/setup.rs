@@ -52,6 +52,7 @@ pub(super) fn setup_scene(
     let camera_translation = Vec3::new(0.0, 55.0, -180.0);
     commands.spawn((
         Camera3d::default(),
+        Msaa::Off,
         Tonemapping::AcesFitted,
         Bloom {
             intensity: 0.11,
