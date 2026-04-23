@@ -13,12 +13,14 @@ use bevy::math::DVec3;
 use bevy::pbr::MaterialPlugin;
 use bevy::prelude::*;
 use bevy_egui::{EguiPlugin, EguiPrimaryContextPass};
+use chrono::Utc;
 use materials::PlanetAtmosphereMaterial;
 use std::f32::consts::PI;
 use std::time::Duration;
 use types::{
-    AppPaths, AppStatus, BODIES, BodyRuntime, EphemerisResource, HorizonsHttpClient,
-    HorizonsSyncState, OrbitCameraState, RenderSettings, SimulationState, TextureStatus,
+    AppPaths, AppStatus, BODIES, BodyRuntime, BodyTrails, EphemerisResource, HorizonsHttpClient,
+    HorizonsSyncState, OrbitCameraState, RenderSettings, SimulationEpoch, SimulationState,
+    TextureStatus,
 };
 
 pub(crate) fn run() {
@@ -53,6 +55,10 @@ pub(crate) fn run() {
         .insert_resource(RenderSettings::default())
         .insert_resource(BodyRuntime {
             positions: vec![DVec3::ZERO; BODIES.len()],
+        })
+        .insert_resource(BodyTrails::new(BODIES.len()))
+        .insert_resource(SimulationEpoch {
+            start_utc: Utc::now(),
         })
         .insert_resource(OrbitCameraState {
             yaw: PI,
@@ -97,6 +103,8 @@ pub(crate) fn run() {
                 camera::update_camera_transform,
                 render::apply_lighting_preset,
                 render::sync_visibility_toggles,
+                render::record_body_trails,
+                render::draw_body_trails,
                 render::update_window_title,
             ),
         )
