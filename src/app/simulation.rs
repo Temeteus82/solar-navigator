@@ -1,5 +1,5 @@
 use super::types::{
-    AU_TO_SCENE_UNITS, AtmosphereLayer, AtmosphereOf, BODIES, BodyEntity, BodyRuntime,
+    AU_TO_SCENE_UNITS, AtmosphereLayer, AtmosphereOf, BODIES, BodyEntity, BodyRuntime, BodyTrails,
     EphemerisResource, HorizonsSyncState, KM_PER_AU, MAX_SIMULATION_RATE_MULTIPLIER,
     MIN_SIMULATION_RATE_MULTIPLIER, OrbitCameraState, SECONDS_PER_DAY, SimulationState,
 };
@@ -20,6 +20,7 @@ pub(super) fn keyboard_controls(
     egui_input: Res<EguiWantsInput>,
     mut simulation_state: ResMut<SimulationState>,
     mut orbit_camera: ResMut<OrbitCameraState>,
+    mut trails: ResMut<BodyTrails>,
 ) {
     if egui_input.wants_any_keyboard_input() {
         return;
@@ -43,6 +44,7 @@ pub(super) fn keyboard_controls(
         orbit_camera.flight = None;
         orbit_camera.target = Vec3::ZERO;
         orbit_camera.distance = 188.3;
+        trails.clear();
     }
 }
 

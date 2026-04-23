@@ -1,5 +1,6 @@
 use super::types::{
-    AppStatus, AtmosphereLayer, BODIES, LightingRig, RenderSettings, SimulationState, StarsBackdrop,
+    AppStatus, AtmosphereLayer, BODIES, BodyRuntime, BodyTrails, LightingRig, RenderSettings,
+    SimulationState, StarsBackdrop, TRAIL_MAX_POINTS,
 };
 use super::util::format_simulation_speed;
 use bevy::prelude::*;
@@ -57,6 +58,56 @@ fn visibility_for(enabled: bool) -> Visibility {
         Visibility::Visible
     } else {
         Visibility::Hidden
+    }
+}
+
+pub(super) fn record_body_trails(
+    simulation_state: Res<SimulationState>,
+    render_settings: Res<RenderSettings>,
+    body_runtime: Res<BodyRuntime>,
+    mut trails: ResMut<BodyTrails>,
+) {
+    if !render_settings.trails_enabled || simulation_state.paused {
+        return;
+    }
+
+    for (index, position) in body_runtime.positions.iter().enumerate() {
+        let Some(trail) = trails.points.get_mut(index) else {
+            continue;
+        };
+        let sample = position.as_vec3();
+        // Skip duplicates (avoids zero-length trail segments when camera is idle).
+        if trail
+            .back()
+            .is_some_and(|last| last.distance_squared(sample) < 1e-6)
+        {
+            continue;
+        }
+        trail.push_back(sample);
+        while trail.len() > TRAIL_MAX_POINTS {
+            trail.pop_front();
+        }
+    }
+}
+
+pub(super) fn draw_body_trails(
+    render_settings: Res<RenderSettings>,
+    trails: Res<BodyTrails>,
+    mut gizmos: Gizmos,
+) {
+    if !render_settings.trails_enabled {
+        return;
+    }
+
+    for (index, trail) in trails.points.iter().enumerate() {
+        if trail.len() < 2 {
+            continue;
+        }
+        let Some(spec) = BODIES.get(index) else {
+            continue;
+        };
+        let base = Color::srgba(spec.color[0], spec.color[1], spec.color[2], 0.9);
+        gizmos.linestrip(trail.iter().copied(), base);
     }
 }
 
