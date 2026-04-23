@@ -1,11 +1,13 @@
 use super::types::{
-    AU_TO_SCENE_UNITS, AppStatus, BODIES, HorizonsSyncState, MAX_SIMULATION_RATE_MULTIPLIER,
-    MIN_SIMULATION_RATE_MULTIPLIER, OrbitCameraState, RenderSettings, SECONDS_PER_DAY,
-    SIDE_PANEL_WIDTH_PX, SimulationState, TextureStatus,
+    AU_TO_SCENE_UNITS, AppStatus, BODIES, BodyRuntime, HorizonsSyncState, KM_PER_AU,
+    MAX_SIMULATION_RATE_MULTIPLIER, MIN_SIMULATION_RATE_MULTIPLIER, OrbitCameraState,
+    RenderSettings, SECONDS_PER_DAY, SIDE_PANEL_WIDTH_PX, SimulationEpoch, SimulationState,
+    TextureStatus,
 };
 use super::util::format_simulation_speed;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
+use chrono::Duration as ChronoDuration;
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn draw_side_panel(
@@ -17,6 +19,8 @@ pub(super) fn draw_side_panel(
     mut render_settings: ResMut<RenderSettings>,
     orbit_camera: Res<OrbitCameraState>,
     texture_status: Res<TextureStatus>,
+    simulation_epoch: Res<SimulationEpoch>,
+    body_runtime: Res<BodyRuntime>,
 ) -> Result {
     let mode_text = if app_status.spice_enabled {
         "SPICE"
@@ -75,6 +79,14 @@ pub(super) fn draw_side_panel(
             } else {
                 "running"
             };
+            let elapsed_days = simulation_state.elapsed_simulation_days;
+            let current_utc = simulation_epoch.start_utc
+                + ChronoDuration::milliseconds((elapsed_days * 86_400_000.0) as i64);
+            ui.label(format!(
+                "Date: {}",
+                current_utc.format("%Y-%m-%d %H:%M:%S UTC")
+            ));
+            ui.small(format!("Elapsed: {elapsed_days:+.3} days from launch"));
             ui.label(format!(
                 "Sim: {paused_text} | Speed: {}",
                 format_simulation_speed(simulation_state.simulation_rate)
@@ -100,6 +112,43 @@ pub(super) fn draw_side_panel(
 
             ui.checkbox(&mut render_settings.stars_enabled, "Starfield backdrop");
             ui.checkbox(&mut render_settings.atmosphere_enabled, "Atmosphere halos");
+            ui.checkbox(&mut render_settings.trails_enabled, "Orbital trails");
+
+            if let Some(selected_index) = simulation_state.selected_body_index
+                && let Some(spec) = BODIES.get(selected_index)
+            {
+                ui.separator();
+                ui.label(format!("Selected: {}", spec.display_name));
+                ui.small(format!(
+                    "Radius: {} km",
+                    format_large(spec.physical_radius_km)
+                ));
+                ui.small(format!("Mass: {:.3e} kg", spec.mass_kg));
+                if let Some(period_days) = spec.orbital_period_days {
+                    if period_days < 800.0 {
+                        ui.small(format!("Orbital period: {period_days:.2} days"));
+                    } else {
+                        ui.small(format!(
+                            "Orbital period: {:.2} years",
+                            period_days / 365.256
+                        ));
+                    }
+                }
+                if let Some(sma_au) = spec.semi_major_axis_au {
+                    ui.small(format!("Semi-major axis: {sma_au:.3} AU"));
+                }
+                if let Some(position) = body_runtime.positions.get(selected_index) {
+                    let distance_au = position.length() / AU_TO_SCENE_UNITS;
+                    let distance_km = distance_au * KM_PER_AU;
+                    ui.small(format!(
+                        "Distance from Sun: {distance_au:.3} AU ({:.3e} km)",
+                        distance_km
+                    ));
+                    // Light-travel time (one-way) from the Sun.
+                    let light_minutes = distance_au * 499.004784 / 60.0;
+                    ui.small(format!("Light from Sun: {light_minutes:.2} min"));
+                }
+            }
 
             ui.separator();
             ui.label("Controls:");
@@ -133,4 +182,14 @@ pub(super) fn draw_side_panel(
         });
 
     Ok(())
+}
+
+fn format_large(value: f64) -> String {
+    if value >= 10_000.0 {
+        format!("{value:.0}")
+    } else if value >= 100.0 {
+        format!("{value:.1}")
+    } else {
+        format!("{value:.2}")
+    }
 }
