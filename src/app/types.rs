@@ -2,8 +2,12 @@ use crate::ephemeris::SpiceEphemeris;
 use bevy::math::DVec3;
 use bevy::prelude::*;
 use bevy::tasks::Task;
+use chrono::{DateTime, Utc};
 use reqwest::blocking::Client;
+use std::collections::VecDeque;
 use std::path::PathBuf;
+
+pub(super) const TRAIL_MAX_POINTS: usize = 512;
 
 pub(super) const AU_TO_SCENE_UNITS: f64 = 250.0;
 pub(super) const KM_PER_AU: f64 = 149_597_870.7;
@@ -31,6 +35,13 @@ pub(super) struct BodySpec {
     pub(super) emissive: [f32; 3],
     pub(super) atmosphere_scale: f32,
     pub(super) atmosphere_emissive: [f32; 4],
+    // Physical info shown in the body details panel (not used for physics/rendering).
+    pub(super) physical_radius_km: f64,
+    pub(super) mass_kg: f64,
+    // Orbital period and semi-major axis around the Sun. `None` for Sun itself
+    // and for satellites (Moon, Charon), which orbit a primary rather than the Sun.
+    pub(super) orbital_period_days: Option<f64>,
+    pub(super) semi_major_axis_au: Option<f64>,
 }
 
 const fn sidereal_spin_radians_per_second(sidereal_period_days: f64) -> f32 {
@@ -150,6 +161,7 @@ impl Default for SimulationState {
 pub(super) struct RenderSettings {
     pub(super) stars_enabled: bool,
     pub(super) atmosphere_enabled: bool,
+    pub(super) trails_enabled: bool,
 }
 
 impl Default for RenderSettings {
@@ -157,6 +169,31 @@ impl Default for RenderSettings {
         Self {
             stars_enabled: true,
             atmosphere_enabled: false,
+            trails_enabled: true,
+        }
+    }
+}
+
+#[derive(Resource)]
+pub(super) struct SimulationEpoch {
+    pub(super) start_utc: DateTime<Utc>,
+}
+
+#[derive(Resource)]
+pub(super) struct BodyTrails {
+    pub(super) points: Vec<VecDeque<Vec3>>,
+}
+
+impl BodyTrails {
+    pub(super) fn new(body_count: usize) -> Self {
+        Self {
+            points: (0..body_count).map(|_| VecDeque::new()).collect(),
+        }
+    }
+
+    pub(super) fn clear(&mut self) {
+        for trail in &mut self.points {
+            trail.clear();
         }
     }
 }
@@ -230,6 +267,10 @@ pub(super) const BODIES: [BodySpec; 14] = [
         emissive: [2.4, 1.7, 0.9],
         atmosphere_scale: 1.12,
         atmosphere_emissive: [0.95, 0.66, 0.24, 0.12],
+        physical_radius_km: 695_700.0,
+        mass_kg: 1.989e30,
+        orbital_period_days: None,
+        semi_major_axis_au: None,
     },
     BodySpec {
         display_name: "Mercury",
@@ -244,6 +285,10 @@ pub(super) const BODIES: [BodySpec; 14] = [
         emissive: [0.0, 0.0, 0.0],
         atmosphere_scale: 0.0,
         atmosphere_emissive: [0.0, 0.0, 0.0, 0.0],
+        physical_radius_km: 2_439.7,
+        mass_kg: 3.3011e23,
+        orbital_period_days: Some(87.969),
+        semi_major_axis_au: Some(0.387),
     },
     BodySpec {
         display_name: "Venus",
@@ -258,6 +303,10 @@ pub(super) const BODIES: [BodySpec; 14] = [
         emissive: [0.0, 0.0, 0.0],
         atmosphere_scale: 1.05,
         atmosphere_emissive: [0.8, 0.72, 0.52, 0.08],
+        physical_radius_km: 6_051.8,
+        mass_kg: 4.8675e24,
+        orbital_period_days: Some(224.701),
+        semi_major_axis_au: Some(0.723),
     },
     BodySpec {
         display_name: "Earth",
@@ -274,6 +323,10 @@ pub(super) const BODIES: [BodySpec; 14] = [
         emissive: [0.0, 0.0, 0.0],
         atmosphere_scale: 1.03,
         atmosphere_emissive: [0.32, 0.58, 1.0, 0.09],
+        physical_radius_km: 6_371.0,
+        mass_kg: 5.972e24,
+        orbital_period_days: Some(365.256),
+        semi_major_axis_au: Some(1.0),
     },
     BodySpec {
         display_name: "Moon",
@@ -289,6 +342,10 @@ pub(super) const BODIES: [BodySpec; 14] = [
         emissive: [0.0, 0.0, 0.0],
         atmosphere_scale: 0.0,
         atmosphere_emissive: [0.0, 0.0, 0.0, 0.0],
+        physical_radius_km: 1_737.4,
+        mass_kg: 7.342e22,
+        orbital_period_days: None,
+        semi_major_axis_au: None,
     },
     BodySpec {
         display_name: "Mars",
@@ -303,6 +360,10 @@ pub(super) const BODIES: [BodySpec; 14] = [
         emissive: [0.0, 0.0, 0.0],
         atmosphere_scale: 1.02,
         atmosphere_emissive: [0.8, 0.35, 0.18, 0.06],
+        physical_radius_km: 3_389.5,
+        mass_kg: 6.4171e23,
+        orbital_period_days: Some(686.98),
+        semi_major_axis_au: Some(1.524),
     },
     BodySpec {
         display_name: "Ceres",
@@ -317,6 +378,10 @@ pub(super) const BODIES: [BodySpec; 14] = [
         emissive: [0.0, 0.0, 0.0],
         atmosphere_scale: 0.0,
         atmosphere_emissive: [0.0, 0.0, 0.0, 0.0],
+        physical_radius_km: 469.7,
+        mass_kg: 9.393e20,
+        orbital_period_days: Some(1680.0),
+        semi_major_axis_au: Some(2.767),
     },
     BodySpec {
         display_name: "Vesta",
@@ -331,6 +396,10 @@ pub(super) const BODIES: [BodySpec; 14] = [
         emissive: [0.0, 0.0, 0.0],
         atmosphere_scale: 0.0,
         atmosphere_emissive: [0.0, 0.0, 0.0, 0.0],
+        physical_radius_km: 262.7,
+        mass_kg: 2.59076e20,
+        orbital_period_days: Some(1325.0),
+        semi_major_axis_au: Some(2.361),
     },
     BodySpec {
         display_name: "Jupiter",
@@ -345,6 +414,10 @@ pub(super) const BODIES: [BodySpec; 14] = [
         emissive: [0.0, 0.0, 0.0],
         atmosphere_scale: 1.01,
         atmosphere_emissive: [0.8, 0.68, 0.42, 0.04],
+        physical_radius_km: 69_911.0,
+        mass_kg: 1.898e27,
+        orbital_period_days: Some(4332.589),
+        semi_major_axis_au: Some(5.204),
     },
     BodySpec {
         display_name: "Saturn",
@@ -359,6 +432,10 @@ pub(super) const BODIES: [BodySpec; 14] = [
         emissive: [0.0, 0.0, 0.0],
         atmosphere_scale: 1.01,
         atmosphere_emissive: [0.82, 0.74, 0.55, 0.04],
+        physical_radius_km: 58_232.0,
+        mass_kg: 5.683e26,
+        orbital_period_days: Some(10_759.22),
+        semi_major_axis_au: Some(9.582),
     },
     BodySpec {
         display_name: "Uranus",
@@ -373,6 +450,10 @@ pub(super) const BODIES: [BodySpec; 14] = [
         emissive: [0.0, 0.0, 0.0],
         atmosphere_scale: 1.02,
         atmosphere_emissive: [0.52, 0.82, 0.92, 0.05],
+        physical_radius_km: 25_362.0,
+        mass_kg: 8.681e25,
+        orbital_period_days: Some(30_688.5),
+        semi_major_axis_au: Some(19.201),
     },
     BodySpec {
         display_name: "Neptune",
@@ -387,6 +468,10 @@ pub(super) const BODIES: [BodySpec; 14] = [
         emissive: [0.0, 0.0, 0.0],
         atmosphere_scale: 1.02,
         atmosphere_emissive: [0.32, 0.46, 0.96, 0.06],
+        physical_radius_km: 24_622.0,
+        mass_kg: 1.024e26,
+        orbital_period_days: Some(60_182.0),
+        semi_major_axis_au: Some(30.047),
     },
     BodySpec {
         display_name: "Pluto",
@@ -403,6 +488,10 @@ pub(super) const BODIES: [BodySpec; 14] = [
         emissive: [0.0, 0.0, 0.0],
         atmosphere_scale: 0.0,
         atmosphere_emissive: [0.0, 0.0, 0.0, 0.0],
+        physical_radius_km: 1_188.3,
+        mass_kg: 1.303e22,
+        orbital_period_days: Some(90_560.0),
+        semi_major_axis_au: Some(39.482),
     },
     BodySpec {
         display_name: "Charon",
@@ -418,6 +507,10 @@ pub(super) const BODIES: [BodySpec; 14] = [
         emissive: [0.0, 0.0, 0.0],
         atmosphere_scale: 0.0,
         atmosphere_emissive: [0.0, 0.0, 0.0, 0.0],
+        physical_radius_km: 606.0,
+        mass_kg: 1.586e21,
+        orbital_period_days: None,
+        semi_major_axis_au: None,
     },
 ];
 
