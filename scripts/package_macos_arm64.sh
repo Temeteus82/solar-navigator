@@ -86,6 +86,9 @@ PLIST
 
 plutil -lint "${CONTENTS_DIR}/Info.plist" >/dev/null
 
+# Remove AppleDouble resource fork stubs that codesign --deep cannot sign
+find "${BUNDLE_ROOT}" -name '._*' -delete
+
 if command -v codesign >/dev/null 2>&1; then
   codesign --force --deep --sign - "${BUNDLE_ROOT}" >/dev/null
 fi
