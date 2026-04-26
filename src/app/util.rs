@@ -1,6 +1,7 @@
 use super::types::{STARFIELD_COUNT, STARFIELD_RADIUS, StarPoint, StarsBackdrop};
 use bevy::asset::RenderAssetUsages;
 use bevy::image::{Image, ImageSampler};
+use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::light::NotShadowCaster;
 use bevy::prelude::*;
 use bevy::render::render_resource::{
@@ -17,6 +18,45 @@ pub(super) fn sphere_mesh(
     let h_segments = subdivisions.max(16);
     let v_segments = (subdivisions / 2).max(8);
     meshes.add(Sphere::new(radius).mesh().uv(h_segments, v_segments))
+}
+
+pub(super) fn ring_mesh(
+    meshes: &mut Assets<Mesh>,
+    inner: f32,
+    outer: f32,
+    segments: u32,
+) -> Handle<Mesh> {
+    let n = segments as usize;
+    let mut positions: Vec<[f32; 3]> = Vec::with_capacity(2 * (n + 1));
+    let mut normals: Vec<[f32; 3]> = Vec::with_capacity(2 * (n + 1));
+    let mut uvs: Vec<[f32; 2]> = Vec::with_capacity(2 * (n + 1));
+    let mut indices: Vec<u32> = Vec::with_capacity(6 * n);
+
+    for i in 0..=n {
+        let theta = std::f32::consts::TAU * i as f32 / n as f32;
+        let (sin_t, cos_t) = theta.sin_cos();
+        positions.push([inner * cos_t, 0.0, inner * sin_t]);
+        normals.push([0.0, 1.0, 0.0]);
+        uvs.push([i as f32 / n as f32, 0.0]);
+        positions.push([outer * cos_t, 0.0, outer * sin_t]);
+        normals.push([0.0, 1.0, 0.0]);
+        uvs.push([i as f32 / n as f32, 1.0]);
+    }
+
+    for i in 0..n {
+        let i0 = (2 * i) as u32;
+        let i1 = (2 * i + 1) as u32;
+        let i2 = (2 * (i + 1)) as u32;
+        let i3 = (2 * (i + 1) + 1) as u32;
+        indices.extend_from_slice(&[i0, i2, i1, i1, i2, i3]);
+    }
+
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    mesh.insert_indices(Indices::U32(indices));
+    meshes.add(mesh)
 }
 
 pub(super) fn spawn_fallback_starfield(

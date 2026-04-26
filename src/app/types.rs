@@ -20,6 +20,13 @@ pub(super) const STARFIELD_COUNT: usize = 900;
 pub(super) const STARFIELD_RADIUS: f32 = 30_000.0;
 
 #[derive(Clone, Copy)]
+pub(super) struct RingSpec {
+    pub(super) inner_radius: f32,
+    pub(super) outer_radius: f32,
+    pub(super) axial_tilt_degrees: f32,
+}
+
+#[derive(Clone, Copy)]
 pub(super) struct BodySpec {
     pub(super) display_name: &'static str,
     pub(super) spice_target: &'static str,
@@ -42,6 +49,7 @@ pub(super) struct BodySpec {
     // and for satellites (Moon, Charon), which orbit a primary rather than the Sun.
     pub(super) orbital_period_days: Option<f64>,
     pub(super) semi_major_axis_au: Option<f64>,
+    pub(super) rings: Option<RingSpec>,
 }
 
 const fn sidereal_spin_radians_per_second(sidereal_period_days: f64) -> f32 {
@@ -142,6 +150,9 @@ pub(super) struct SimulationState {
     pub(super) selected_body_index: Option<usize>,
     pub(super) jump_request: Option<usize>,
     pub(super) target_filter: String,
+    pub(super) picker_year: i32,
+    pub(super) picker_month: u32,
+    pub(super) picker_day: u32,
 }
 
 impl Default for SimulationState {
@@ -149,10 +160,13 @@ impl Default for SimulationState {
         Self {
             elapsed_simulation_days: 0.0,
             simulation_rate: DEFAULT_SIMULATION_RATE_MULTIPLIER,
-            paused: false,
+            paused: true,
             selected_body_index: None,
             jump_request: None,
             target_filter: String::new(),
+            picker_year: 2025,
+            picker_month: 1,
+            picker_day: 1,
         }
     }
 }
@@ -162,6 +176,8 @@ pub(super) struct RenderSettings {
     pub(super) stars_enabled: bool,
     pub(super) atmosphere_enabled: bool,
     pub(super) trails_enabled: bool,
+    pub(super) rings_enabled: bool,
+    pub(super) orbits_enabled: bool,
 }
 
 impl Default for RenderSettings {
@@ -170,6 +186,8 @@ impl Default for RenderSettings {
             stars_enabled: true,
             atmosphere_enabled: false,
             trails_enabled: true,
+            rings_enabled: true,
+            orbits_enabled: false,
         }
     }
 }
@@ -244,6 +262,14 @@ pub(super) struct AtmosphereOf {
 }
 
 #[derive(Component)]
+pub(super) struct PlanetRing;
+
+#[derive(Component)]
+pub(super) struct RingOf {
+    pub(super) index: usize,
+}
+
+#[derive(Component)]
 pub(super) struct StarsBackdrop;
 
 #[derive(Clone, Copy)]
@@ -271,6 +297,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
         mass_kg: 1.989e30,
         orbital_period_days: None,
         semi_major_axis_au: None,
+        rings: None,
     },
     BodySpec {
         display_name: "Mercury",
@@ -289,6 +316,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
         mass_kg: 3.3011e23,
         orbital_period_days: Some(87.969),
         semi_major_axis_au: Some(0.387),
+        rings: None,
     },
     BodySpec {
         display_name: "Venus",
@@ -307,6 +335,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
         mass_kg: 4.8675e24,
         orbital_period_days: Some(224.701),
         semi_major_axis_au: Some(0.723),
+        rings: None,
     },
     BodySpec {
         display_name: "Earth",
@@ -327,6 +356,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
         mass_kg: 5.972e24,
         orbital_period_days: Some(365.256),
         semi_major_axis_au: Some(1.0),
+        rings: None,
     },
     BodySpec {
         display_name: "Moon",
@@ -346,6 +376,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
         mass_kg: 7.342e22,
         orbital_period_days: None,
         semi_major_axis_au: None,
+        rings: None,
     },
     BodySpec {
         display_name: "Mars",
@@ -364,6 +395,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
         mass_kg: 6.4171e23,
         orbital_period_days: Some(686.98),
         semi_major_axis_au: Some(1.524),
+        rings: None,
     },
     BodySpec {
         display_name: "Ceres",
@@ -382,6 +414,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
         mass_kg: 9.393e20,
         orbital_period_days: Some(1680.0),
         semi_major_axis_au: Some(2.767),
+        rings: None,
     },
     BodySpec {
         display_name: "Vesta",
@@ -400,6 +433,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
         mass_kg: 2.59076e20,
         orbital_period_days: Some(1325.0),
         semi_major_axis_au: Some(2.361),
+        rings: None,
     },
     BodySpec {
         display_name: "Jupiter",
@@ -418,6 +452,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
         mass_kg: 1.898e27,
         orbital_period_days: Some(4332.589),
         semi_major_axis_au: Some(5.204),
+        rings: None,
     },
     BodySpec {
         display_name: "Saturn",
@@ -436,6 +471,11 @@ pub(super) const BODIES: [BodySpec; 14] = [
         mass_kg: 5.683e26,
         orbital_period_days: Some(10_759.22),
         semi_major_axis_au: Some(9.582),
+        rings: Some(RingSpec {
+            inner_radius: 1.72,
+            outer_radius: 3.53,
+            axial_tilt_degrees: 26.73,
+        }),
     },
     BodySpec {
         display_name: "Uranus",
@@ -454,6 +494,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
         mass_kg: 8.681e25,
         orbital_period_days: Some(30_688.5),
         semi_major_axis_au: Some(19.201),
+        rings: None,
     },
     BodySpec {
         display_name: "Neptune",
@@ -472,6 +513,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
         mass_kg: 1.024e26,
         orbital_period_days: Some(60_182.0),
         semi_major_axis_au: Some(30.047),
+        rings: None,
     },
     BodySpec {
         display_name: "Pluto",
@@ -492,6 +534,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
         mass_kg: 1.303e22,
         orbital_period_days: Some(90_560.0),
         semi_major_axis_au: Some(39.482),
+        rings: None,
     },
     BodySpec {
         display_name: "Charon",
@@ -511,6 +554,7 @@ pub(super) const BODIES: [BodySpec; 14] = [
         mass_kg: 1.586e21,
         orbital_period_days: None,
         semi_major_axis_au: None,
+        rings: None,
     },
 ];
 

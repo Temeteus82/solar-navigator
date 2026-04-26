@@ -1,7 +1,8 @@
 use super::types::{
-    AppStatus, AtmosphereLayer, BODIES, BodyRuntime, BodyTrails, LightingRig, RenderSettings,
-    SimulationState, StarsBackdrop, TRAIL_MAX_POINTS,
+    AU_TO_SCENE_UNITS, AppStatus, AtmosphereLayer, BODIES, BodyRuntime, BodyTrails, LightingRig,
+    PlanetRing, RenderSettings, SimulationState, StarsBackdrop, TRAIL_MAX_POINTS,
 };
+use std::f32::consts::TAU;
 use super::util::format_simulation_speed;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
@@ -37,19 +38,34 @@ pub(super) fn apply_lighting_preset(
     rim_fill.intensity = 0.0;
 }
 
+#[allow(clippy::type_complexity)]
 pub(super) fn sync_visibility_toggles(
     render_settings: Res<RenderSettings>,
-    mut atmosphere_query: Query<&mut Visibility, (With<AtmosphereLayer>, Without<StarsBackdrop>)>,
-    mut stars_query: Query<&mut Visibility, (With<StarsBackdrop>, Without<AtmosphereLayer>)>,
+    mut atmosphere_query: Query<
+        &mut Visibility,
+        (With<AtmosphereLayer>, Without<StarsBackdrop>, Without<PlanetRing>),
+    >,
+    mut stars_query: Query<
+        &mut Visibility,
+        (With<StarsBackdrop>, Without<AtmosphereLayer>, Without<PlanetRing>),
+    >,
+    mut ring_query: Query<
+        &mut Visibility,
+        (With<PlanetRing>, Without<AtmosphereLayer>, Without<StarsBackdrop>),
+    >,
 ) {
     let atmosphere_visibility = visibility_for(render_settings.atmosphere_enabled);
     let stars_visibility = visibility_for(render_settings.stars_enabled);
+    let ring_visibility = visibility_for(render_settings.rings_enabled);
 
     for mut visibility in &mut atmosphere_query {
         *visibility = atmosphere_visibility;
     }
     for mut visibility in &mut stars_query {
         *visibility = stars_visibility;
+    }
+    for mut visibility in &mut ring_query {
+        *visibility = ring_visibility;
     }
 }
 
@@ -108,6 +124,32 @@ pub(super) fn draw_body_trails(
         };
         let base = Color::srgba(spec.color[0], spec.color[1], spec.color[2], 0.9);
         gizmos.linestrip(trail.iter().copied(), base);
+    }
+}
+
+pub(super) fn draw_orbit_paths(
+    render_settings: Res<RenderSettings>,
+    simulation_state: Res<SimulationState>,
+    mut gizmos: Gizmos,
+) {
+    if !render_settings.orbits_enabled {
+        return;
+    }
+    for (index, spec) in BODIES.iter().enumerate() {
+        let Some(sma_au) = spec.semi_major_axis_au else {
+            continue;
+        };
+        let radius = sma_au as f32 * AU_TO_SCENE_UNITS as f32;
+        let is_selected = simulation_state.selected_body_index == Some(index);
+        let alpha = if is_selected { 0.55 } else { 0.12 };
+        let color = Color::srgba(spec.color[0], spec.color[1], spec.color[2], alpha);
+        let points: Vec<Vec3> = (0..=128)
+            .map(|i| {
+                let a = i as f32 / 128.0 * TAU;
+                Vec3::new(radius * a.cos(), 0.0, radius * a.sin())
+            })
+            .collect();
+        gizmos.linestrip(points, color);
     }
 }
 
