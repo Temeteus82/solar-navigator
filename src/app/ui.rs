@@ -1,5 +1,5 @@
 use super::types::{
-    AU_TO_SCENE_UNITS, AppStatus, BODIES, BodyRuntime, HorizonsSyncState, KM_PER_AU,
+    AU_TO_SCENE_UNITS, AppStatus, BODIES, BodyRuntime, BodyTrails, HorizonsSyncState, KM_PER_AU,
     MAX_SIMULATION_RATE_MULTIPLIER, MIN_SIMULATION_RATE_MULTIPLIER, OrbitCameraState,
     RenderSettings, SECONDS_PER_DAY, SIDE_PANEL_WIDTH_PX, SimulationEpoch, SimulationState,
     TextureStatus,
@@ -7,7 +7,7 @@ use super::types::{
 use super::util::format_simulation_speed;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
-use chrono::Duration as ChronoDuration;
+use chrono::{Duration as ChronoDuration, NaiveDate};
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn draw_side_panel(
@@ -21,6 +21,7 @@ pub(super) fn draw_side_panel(
     texture_status: Res<TextureStatus>,
     simulation_epoch: Res<SimulationEpoch>,
     body_runtime: Res<BodyRuntime>,
+    mut trails: ResMut<BodyTrails>,
 ) -> Result {
     let mode_text = if app_status.spice_enabled {
         "SPICE"
@@ -106,6 +107,38 @@ pub(super) fn draw_side_panel(
             );
 
             ui.separator();
+            ui.label("Jump to date:");
+            ui.horizontal(|ui| {
+                ui.add(
+                    egui::DragValue::new(&mut simulation_state.picker_year)
+                        .range(1600..=2200)
+                        .prefix("Y "),
+                );
+                ui.add(
+                    egui::DragValue::new(&mut simulation_state.picker_month)
+                        .range(1..=12)
+                        .prefix("M "),
+                );
+                ui.add(
+                    egui::DragValue::new(&mut simulation_state.picker_day)
+                        .range(1..=31)
+                        .prefix("D "),
+                );
+            });
+            if ui.button("Go to Date").clicked()
+                && let Some(date) = NaiveDate::from_ymd_opt(
+                    simulation_state.picker_year,
+                    simulation_state.picker_month,
+                    simulation_state.picker_day,
+                )
+            {
+                let target = date.and_hms_opt(0, 0, 0).unwrap().and_utc();
+                let diff = target.signed_duration_since(simulation_epoch.start_utc);
+                simulation_state.elapsed_simulation_days = diff.num_seconds() as f64 / 86_400.0;
+                trails.clear();
+            }
+
+            ui.separator();
             ui.small(format!(
                 "Distance scale: 1 AU = {AU_TO_SCENE_UNITS:.1} units (realistic)"
             ));
@@ -113,6 +146,8 @@ pub(super) fn draw_side_panel(
             ui.checkbox(&mut render_settings.stars_enabled, "Starfield backdrop");
             ui.checkbox(&mut render_settings.atmosphere_enabled, "Atmosphere halos");
             ui.checkbox(&mut render_settings.trails_enabled, "Orbital trails");
+            ui.checkbox(&mut render_settings.rings_enabled, "Planetary rings");
+            ui.checkbox(&mut render_settings.orbits_enabled, "Orbital paths");
 
             if let Some(selected_index) = simulation_state.selected_body_index
                 && let Some(spec) = BODIES.get(selected_index)

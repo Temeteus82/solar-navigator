@@ -13,7 +13,7 @@ use bevy::math::DVec3;
 use bevy::pbr::MaterialPlugin;
 use bevy::prelude::*;
 use bevy_egui::{EguiPlugin, EguiPrimaryContextPass};
-use chrono::Utc;
+use chrono::{Datelike, Utc};
 use materials::PlanetAtmosphereMaterial;
 use std::f32::consts::PI;
 use std::time::Duration;
@@ -51,7 +51,15 @@ pub(crate) fn run() {
         })
         .insert_resource(HorizonsSyncState::new(BODIES.len()))
         .insert_resource(TextureStatus::default())
-        .insert_resource(SimulationState::default())
+        .insert_resource({
+            let now = Utc::now();
+            SimulationState {
+                picker_year: now.year(),
+                picker_month: now.month(),
+                picker_day: now.day(),
+                ..SimulationState::default()
+            }
+        })
         .insert_resource(RenderSettings::default())
         .insert_resource(BodyRuntime {
             positions: vec![DVec3::ZERO; BODIES.len()],
@@ -90,6 +98,7 @@ pub(crate) fn run() {
                 simulation::update_body_positions,
                 camera::track_selected_body,
                 simulation::sync_atmosphere_positions,
+                simulation::sync_ring_positions,
                 camera::apply_camera_flight,
                 setup::process_horizons_sync_requests,
                 setup::poll_horizons_sync_task,
@@ -105,6 +114,7 @@ pub(crate) fn run() {
                 render::sync_visibility_toggles,
                 render::record_body_trails,
                 render::draw_body_trails,
+                render::draw_orbit_paths,
                 render::update_window_title,
             ),
         )

@@ -1,7 +1,8 @@
 use super::types::{
     AU_TO_SCENE_UNITS, AtmosphereLayer, AtmosphereOf, BODIES, BodyEntity, BodyRuntime, BodyTrails,
     EphemerisResource, HorizonsSyncState, KM_PER_AU, MAX_SIMULATION_RATE_MULTIPLIER,
-    MIN_SIMULATION_RATE_MULTIPLIER, OrbitCameraState, SECONDS_PER_DAY, SimulationState,
+    MIN_SIMULATION_RATE_MULTIPLIER, OrbitCameraState, PlanetRing, RingOf, SECONDS_PER_DAY,
+    SimulationState,
 };
 use bevy::math::DVec3;
 use bevy::prelude::*;
@@ -170,6 +171,17 @@ pub(super) fn sync_atmosphere_positions(
 ) {
     for (atmosphere, mut transform) in &mut atmosphere_query {
         if let Some(position) = body_runtime.positions.get(atmosphere.index) {
+            transform.translation = position.as_vec3();
+        }
+    }
+}
+
+pub(super) fn sync_ring_positions(
+    body_runtime: Res<BodyRuntime>,
+    mut ring_query: Query<(&RingOf, &mut Transform), With<PlanetRing>>,
+) {
+    for (ring, mut transform) in &mut ring_query {
+        if let Some(position) = body_runtime.positions.get(ring.index) {
             transform.translation = position.as_vec3();
         }
     }
