@@ -5,16 +5,14 @@ use super::types::{
     SimulationState,
 };
 use super::util::eclipj2000_to_scene;
+use crate::ephemeris::{
+    CALLISTO_ORBIT, CHARON_ORBIT, EUROPA_ORBIT, GANYMEDE_ORBIT, IO_ORBIT, SatelliteOrbit,
+};
 use bevy::math::DVec3;
 use bevy::prelude::*;
 use bevy_egui::input::EguiWantsInput;
 use std::f64::consts::TAU;
 
-const CHARON_SEMI_MAJOR_AXIS_KM: f64 = 19_591.0;
-const CHARON_ORBIT_PERIOD_DAYS: f64 = 6.38723;
-const CHARON_ORBIT_PHASE_RADIANS: f64 = 1.1;
-const CHARON_Z_WOBBLE_FACTOR: f64 = 0.03;
-const CHARON_Z_WOBBLE_FREQUENCY: f64 = 1.4;
 const CHARON_TO_PLUTO_MASS_RATIO: f64 = 0.1218;
 
 pub(super) fn keyboard_controls(
@@ -97,6 +95,12 @@ pub(super) fn update_body_positions(
         au_to_scene_units,
     );
 
+    apply_jupiter_moon_positions(
+        &mut scene_positions,
+        simulation_state.elapsed_simulation_days,
+        au_to_scene_units,
+    );
+
     for (body, mut transform) in &mut body_query {
         let spec = BODIES[body.index];
         let scene_position = scene_positions[body.index];
@@ -119,16 +123,48 @@ fn body_index_for_target(target: &str) -> Option<usize> {
     BODIES.iter().position(|spec| spec.spice_target == target)
 }
 
-fn charon_relative_scene_offset(elapsed_simulation_days: f64, au_to_scene_units: f64) -> DVec3 {
-    let radius_scene_units = (CHARON_SEMI_MAJOR_AXIS_KM / KM_PER_AU) * au_to_scene_units;
-    let theta =
-        TAU * elapsed_simulation_days / CHARON_ORBIT_PERIOD_DAYS + CHARON_ORBIT_PHASE_RADIANS;
-
+/// Computes the scene-space offset of a satellite from its primary using the
+/// eclipj2000→scene mapping (X-Z orbital plane, Y for the inclination wobble).
+fn satellite_scene_offset(
+    orbit: &SatelliteOrbit,
+    elapsed_days: f64,
+    au_to_scene_units: f64,
+) -> DVec3 {
+    let radius = (orbit.semi_major_axis_km / KM_PER_AU) * au_to_scene_units;
+    let theta = TAU * elapsed_days / orbit.period_days + orbit.phase_radians;
     DVec3::new(
-        radius_scene_units * theta.cos(),
-        radius_scene_units * CHARON_Z_WOBBLE_FACTOR * (theta * CHARON_Z_WOBBLE_FREQUENCY).sin(),
-        -radius_scene_units * theta.sin(),
+        radius * theta.cos(),
+        radius * orbit.z_wobble_factor * (theta * orbit.z_wobble_frequency).sin(),
+        -radius * theta.sin(),
     )
+}
+
+fn charon_relative_scene_offset(elapsed_simulation_days: f64, au_to_scene_units: f64) -> DVec3 {
+    satellite_scene_offset(&CHARON_ORBIT, elapsed_simulation_days, au_to_scene_units)
+}
+
+fn apply_jupiter_moon_positions(
+    scene_positions: &mut [DVec3],
+    elapsed_simulation_days: f64,
+    au_to_scene_units: f64,
+) {
+    let Some(jupiter_index) = body_index_for_target("JUPITER BARYCENTER") else {
+        return;
+    };
+    let jupiter_pos = scene_positions[jupiter_index];
+
+    for (moon_target, orbit) in &[
+        ("IO", &IO_ORBIT),
+        ("EUROPA", &EUROPA_ORBIT),
+        ("GANYMEDE", &GANYMEDE_ORBIT),
+        ("CALLISTO", &CALLISTO_ORBIT),
+    ] {
+        let Some(moon_index) = body_index_for_target(moon_target) else {
+            continue;
+        };
+        scene_positions[moon_index] =
+            jupiter_pos + satellite_scene_offset(orbit, elapsed_simulation_days, au_to_scene_units);
+    }
 }
 
 fn apply_pluto_charon_center_positions(
@@ -186,9 +222,11 @@ pub(super) fn sync_ring_positions(
 #[cfg(test)]
 mod tests {
     use super::{
-        CHARON_TO_PLUTO_MASS_RATIO, apply_pluto_charon_center_positions, body_index_for_target,
-        charon_relative_scene_offset, spin_step_radians,
+        CHARON_TO_PLUTO_MASS_RATIO, apply_jupiter_moon_positions,
+        apply_pluto_charon_center_positions, body_index_for_target, charon_relative_scene_offset,
+        spin_step_radians,
     };
+    use crate::ephemeris::{CALLISTO_ORBIT, IO_ORBIT};
     use bevy::math::DVec3;
 
     #[test]
@@ -204,6 +242,41 @@ mod tests {
     #[test]
     fn spin_step_radians_zero_rate_is_zero() {
         assert_eq!(spin_step_radians(0.0, 2.0), 0.0);
+    }
+
+    #[test]
+    fn apply_jupiter_moon_positions_places_io_at_correct_scene_distance() {
+        let mut positions = vec![DVec3::ZERO; super::BODIES.len()];
+        let jupiter_index =
+            body_index_for_target("JUPITER BARYCENTER").expect("jupiter index should exist");
+        let io_index = body_index_for_target("IO").expect("io index should exist");
+        positions[jupiter_index] = DVec3::new(500.0, 0.0, 0.0);
+
+        apply_jupiter_moon_positions(&mut positions, 0.0, 250.0);
+
+        // Y is the inclination wobble; orbital radius is the X-Z magnitude.
+        let offset = positions[io_index] - positions[jupiter_index];
+        let xz_radius = (offset.x * offset.x + offset.z * offset.z).sqrt();
+        let expected = (IO_ORBIT.semi_major_axis_km / super::KM_PER_AU) * 250.0;
+        assert!((xz_radius - expected).abs() < 1e-9);
+    }
+
+    #[test]
+    fn apply_jupiter_moon_positions_places_callisto_at_correct_scene_distance() {
+        let mut positions = vec![DVec3::ZERO; super::BODIES.len()];
+        let jupiter_index =
+            body_index_for_target("JUPITER BARYCENTER").expect("jupiter index should exist");
+        let callisto_index =
+            body_index_for_target("CALLISTO").expect("callisto index should exist");
+        positions[jupiter_index] = DVec3::new(-100.0, 50.0, 20.0);
+
+        apply_jupiter_moon_positions(&mut positions, 50.0, 250.0);
+
+        // Y is the inclination wobble; orbital radius is the X-Z magnitude.
+        let offset = positions[callisto_index] - positions[jupiter_index];
+        let xz_radius = (offset.x * offset.x + offset.z * offset.z).sqrt();
+        let expected = (CALLISTO_ORBIT.semi_major_axis_km / super::KM_PER_AU) * 250.0;
+        assert!((xz_radius - expected).abs() < 1e-9);
     }
 
     #[test]
