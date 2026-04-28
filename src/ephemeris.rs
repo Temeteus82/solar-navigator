@@ -247,6 +247,10 @@ pub fn horizons_command_for_target(target: &str) -> Option<&'static str> {
         "PLUTO BARYCENTER" => Some("9"),
         "PLUTO" => Some("999"),
         "CHARON" => Some("901"),
+        "IO" => Some("501"),
+        "EUROPA" => Some("502"),
+        "GANYMEDE" => Some("503"),
+        "CALLISTO" => Some("504"),
         _ => None,
     }
 }
@@ -353,13 +357,13 @@ fn parse_horizons_vector_row_au(raw: &str) -> Result<[f64; 3], String> {
 }
 
 /// Parameters describing a satellite's fallback orbit around its primary.
-struct SatelliteOrbit {
-    primary: &'static str,
-    semi_major_axis_km: f64,
-    period_days: f64,
-    phase_radians: f64,
-    z_wobble_factor: f64,
-    z_wobble_frequency: f64,
+pub struct SatelliteOrbit {
+    pub primary: &'static str,
+    pub semi_major_axis_km: f64,
+    pub period_days: f64,
+    pub phase_radians: f64,
+    pub z_wobble_factor: f64,
+    pub z_wobble_frequency: f64,
 }
 
 const MOON_ORBIT: SatelliteOrbit = SatelliteOrbit {
@@ -371,13 +375,49 @@ const MOON_ORBIT: SatelliteOrbit = SatelliteOrbit {
     z_wobble_frequency: 0.5,
 };
 
-const CHARON_ORBIT: SatelliteOrbit = SatelliteOrbit {
+pub const CHARON_ORBIT: SatelliteOrbit = SatelliteOrbit {
     primary: "PLUTO",
     semi_major_axis_km: CHARON_SEMI_MAJOR_AXIS_KM,
     period_days: 6.38723,
     phase_radians: 1.1,
     z_wobble_factor: 0.03,
     z_wobble_frequency: 1.4,
+};
+
+pub const IO_ORBIT: SatelliteOrbit = SatelliteOrbit {
+    primary: "JUPITER BARYCENTER",
+    semi_major_axis_km: 421_800.0,
+    period_days: 1.769138,
+    phase_radians: 0.4,
+    z_wobble_factor: 0.04,
+    z_wobble_frequency: 1.2,
+};
+
+pub const EUROPA_ORBIT: SatelliteOrbit = SatelliteOrbit {
+    primary: "JUPITER BARYCENTER",
+    semi_major_axis_km: 671_100.0,
+    period_days: 3.551181,
+    phase_radians: 2.1,
+    z_wobble_factor: 0.05,
+    z_wobble_frequency: 0.9,
+};
+
+pub const GANYMEDE_ORBIT: SatelliteOrbit = SatelliteOrbit {
+    primary: "JUPITER BARYCENTER",
+    semi_major_axis_km: 1_070_400.0,
+    period_days: 7.154553,
+    phase_radians: 3.8,
+    z_wobble_factor: 0.04,
+    z_wobble_frequency: 0.7,
+};
+
+pub const CALLISTO_ORBIT: SatelliteOrbit = SatelliteOrbit {
+    primary: "JUPITER BARYCENTER",
+    semi_major_axis_km: 1_882_700.0,
+    period_days: 16.689018,
+    phase_radians: 5.3,
+    z_wobble_factor: 0.05,
+    z_wobble_frequency: 0.5,
 };
 
 fn fallback_satellite_position_au(orbit: &SatelliteOrbit, elapsed_days: f64) -> [f64; 3] {
@@ -398,6 +438,18 @@ fn fallback_position_au(target: &str, elapsed_days: f64) -> [f64; 3] {
     }
     if target.eq_ignore_ascii_case("CHARON") {
         return fallback_satellite_position_au(&CHARON_ORBIT, elapsed_days);
+    }
+    if target.eq_ignore_ascii_case("IO") {
+        return fallback_satellite_position_au(&IO_ORBIT, elapsed_days);
+    }
+    if target.eq_ignore_ascii_case("EUROPA") {
+        return fallback_satellite_position_au(&EUROPA_ORBIT, elapsed_days);
+    }
+    if target.eq_ignore_ascii_case("GANYMEDE") {
+        return fallback_satellite_position_au(&GANYMEDE_ORBIT, elapsed_days);
+    }
+    if target.eq_ignore_ascii_case("CALLISTO") {
+        return fallback_satellite_position_au(&CALLISTO_ORBIT, elapsed_days);
     }
 
     fallback_planet_position_au(target, elapsed_days)
@@ -611,6 +663,38 @@ $$EOE
         let expected = CHARON_SEMI_MAJOR_AXIS_KM / KM_PER_AU;
 
         assert_close(xy_radius, expected, 1e-12);
+    }
+
+    fn galilean_moon_xy_radius(moon: &str, elapsed_days: f64) -> f64 {
+        let moon_pos = fallback_position_au(moon, elapsed_days);
+        let jupiter = fallback_planet_position_au("JUPITER BARYCENTER", elapsed_days);
+        let dx = moon_pos[0] - jupiter[0];
+        let dy = moon_pos[1] - jupiter[1];
+        (dx * dx + dy * dy).sqrt()
+    }
+
+    #[test]
+    fn fallback_position_au_io_xy_radius_matches_semi_major_axis() {
+        let expected = IO_ORBIT.semi_major_axis_km / KM_PER_AU;
+        assert_close(galilean_moon_xy_radius("IO", 77.3), expected, 1e-12);
+    }
+
+    #[test]
+    fn fallback_position_au_europa_xy_radius_matches_semi_major_axis() {
+        let expected = EUROPA_ORBIT.semi_major_axis_km / KM_PER_AU;
+        assert_close(galilean_moon_xy_radius("EUROPA", 12.1), expected, 1e-12);
+    }
+
+    #[test]
+    fn fallback_position_au_ganymede_xy_radius_matches_semi_major_axis() {
+        let expected = GANYMEDE_ORBIT.semi_major_axis_km / KM_PER_AU;
+        assert_close(galilean_moon_xy_radius("GANYMEDE", 55.0), expected, 1e-12);
+    }
+
+    #[test]
+    fn fallback_position_au_callisto_xy_radius_matches_semi_major_axis() {
+        let expected = CALLISTO_ORBIT.semi_major_axis_km / KM_PER_AU;
+        assert_close(galilean_moon_xy_radius("CALLISTO", 200.0), expected, 1e-12);
     }
 
     #[test]
