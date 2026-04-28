@@ -1,8 +1,9 @@
 use super::types::{STARFIELD_COUNT, STARFIELD_RADIUS, StarPoint, StarsBackdrop};
 use bevy::asset::RenderAssetUsages;
 use bevy::image::{Image, ImageSampler};
-use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::light::NotShadowCaster;
+use bevy::math::DVec3;
+use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use bevy::render::render_resource::{
     Extent3d, TextureDimension, TextureFormat, TextureViewDescriptor, TextureViewDimension,
@@ -51,7 +52,10 @@ pub(super) fn ring_mesh(
         indices.extend_from_slice(&[i0, i2, i1, i1, i2, i3]);
     }
 
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    );
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
@@ -382,6 +386,15 @@ fn generate_starfield(count: usize) -> Vec<StarPoint> {
 fn random01(seed: &mut u64) -> f32 {
     *seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
     ((*seed >> 32) as u32) as f32 / u32::MAX as f32
+}
+
+/// Convert a heliocentric position from the ECLIPJ2000 frame (SPICE convention,
+/// Z = ecliptic north, right-handed) to Bevy scene space (Y-up, right-handed).
+///
+/// The mapping is: scene X = spice X, scene Y = spice Z, scene Z = –spice Y.
+/// `scale` is multiplied into every component (e.g. AU_TO_SCENE_UNITS).
+pub(super) fn eclipj2000_to_scene(au: [f64; 3], scale: f64) -> DVec3 {
+    DVec3::new(au[0] * scale, au[2] * scale, -au[1] * scale)
 }
 
 #[cfg(test)]

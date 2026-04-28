@@ -137,8 +137,8 @@ pub(super) fn apply_camera_flight(
     };
 
     let dt = time.delta_secs();
-    let at_lerp = (dt * 4.0).clamp(0.0, 1.0);
-    let dist_lerp = (dt * 3.0).clamp(0.0, 1.0);
+    let at_lerp = 1.0 - (-4.0 * dt).exp();
+    let dist_lerp = 1.0 - (-3.0 * dt).exp();
 
     orbit_camera.target = orbit_camera.target.lerp(target_at, at_lerp);
     orbit_camera.distance += (flight.target_distance - orbit_camera.distance) * dist_lerp;
@@ -185,7 +185,7 @@ fn orient_camera_toward_sunward(orbit_camera: &mut OrbitCameraState, target_posi
 }
 
 fn tracked_target_after_step(current: Vec3, desired: Vec3, delta_seconds: f32) -> Vec3 {
-    let lerp_factor = (delta_seconds * 8.0).clamp(0.0, 1.0);
+    let lerp_factor = 1.0 - (-8.0 * delta_seconds).exp();
     current.lerp(desired, lerp_factor)
 }
 
