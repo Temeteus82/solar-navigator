@@ -1,5 +1,12 @@
 [env]
 CSPICE_DIR = { value = "vendor/cspice/cspice", relative = true }
 
+[build]
+# Compiler cache — speeds up rebuilds and shares cache across Rust projects.
+# Install before first use:
+#   macOS:  brew install sccache
+#   other:  cargo install sccache
+rustc-wrapper = "sccache"
+
 [target.aarch64-apple-darwin]
 linker = "scripts/linker-wrapper.sh"

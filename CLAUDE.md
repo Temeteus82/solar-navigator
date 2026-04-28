@@ -41,6 +41,36 @@ cargo test <test_name>
 cargo test <test_name> --no-default-features
 ```
 
+### Build cache and disk management
+
+[sccache](https://github.com/mozilla/sccache) is configured as the compiler wrapper in
+`.cargo/config.toml`. It caches compiled crate artefacts and shares them across all Rust
+projects on the machine, cutting rebuild times significantly. Install it once:
+
+```bash
+brew install sccache          # macOS
+cargo install sccache         # other platforms
+```
+
+[cargo-sweep](https://github.com/holmgr/cargo-sweep) prunes stale build artefacts without
+a full `cargo clean`. Install once, then run periodically:
+
+```bash
+cargo install cargo-sweep
+
+# Remove artefacts older than 7 days (default)
+./scripts/sweep.sh
+
+# Remove artefacts older than N days
+./scripts/sweep.sh 14
+
+# Stamp the current build as "in use" (run before a long break)
+./scripts/sweep.sh stamp
+
+# Nuke everything (like cargo clean)
+./scripts/sweep.sh all
+```
+
 ### First-time setup
 
 ```bash
