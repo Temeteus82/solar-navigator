@@ -4,6 +4,7 @@ use super::types::{
     MIN_SIMULATION_RATE_MULTIPLIER, OrbitCameraState, PlanetRing, RingOf, SECONDS_PER_DAY,
     SimulationState,
 };
+use super::util::eclipj2000_to_scene;
 use bevy::math::DVec3;
 use bevy::prelude::*;
 use bevy_egui::input::EguiWantsInput;
@@ -81,12 +82,7 @@ pub(super) fn update_body_positions(
             .ephemeris
             .position_au(spec.spice_target, simulation_state.elapsed_simulation_days);
 
-        scene_positions[body_index] = DVec3::new(
-            position_au[0] * au_to_scene_units,
-            position_au[2] * au_to_scene_units,
-            // Preserve right-handed axes while remapping SPICE Z -> scene Y.
-            -position_au[1] * au_to_scene_units,
-        );
+        scene_positions[body_index] = eclipj2000_to_scene(position_au, au_to_scene_units);
 
         if horizons_sync.enabled
             && let Some(offset_au) = horizons_sync.per_body_au_offset.get(body_index)

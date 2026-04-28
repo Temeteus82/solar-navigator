@@ -6,8 +6,8 @@ use super::types::{
     PlanetTextureRegistry, RingOf, StarsBackdrop, TextureStatus,
 };
 use super::util::{
-    color_from_rgba, equirectangular_to_cubemap_image, linear_from_rgb, ring_mesh,
-    spawn_fallback_starfield, sphere_mesh,
+    color_from_rgba, eclipj2000_to_scene, equirectangular_to_cubemap_image, linear_from_rgb,
+    ring_mesh, spawn_fallback_starfield, sphere_mesh,
 };
 use crate::ephemeris::{
     fetch_horizons_heliocentric_position_au_with_client, horizons_command_for_target,
@@ -206,9 +206,9 @@ pub(super) fn setup_scene(
 
         if let Some(ring) = spec.rings {
             let ring_tex_path = texture_dir.join("saturn_ring.png");
-            let ring_texture = ring_tex_path.is_file().then(|| {
-                asset_server.load::<Image>("textures/saturn_ring.png")
-            });
+            let ring_texture = ring_tex_path
+                .is_file()
+                .then(|| asset_server.load::<Image>("textures/saturn_ring.png"));
             let ring_handle = ring_mesh(&mut meshes, ring.inner_radius, ring.outer_radius, 128);
             let ring_material = materials.add(StandardMaterial {
                 base_color: Color::srgba(0.83, 0.77, 0.56, 0.80),
@@ -576,7 +576,7 @@ fn run_horizons_sync_task(
                     max_delta_body = target.display_name;
                 }
 
-                per_body_au_offset[target.index] = DVec3::new(dx, dz, -dy);
+                per_body_au_offset[target.index] = eclipj2000_to_scene([dx, dy, dz], 1.0);
                 validated_count += 1;
             }
             Err(err) => {
