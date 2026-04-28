@@ -2,10 +2,10 @@ use super::types::{
     AU_TO_SCENE_UNITS, AppStatus, AtmosphereLayer, BODIES, BodyRuntime, BodyTrails, LightingRig,
     PlanetRing, RenderSettings, SimulationState, StarsBackdrop, TRAIL_MAX_POINTS,
 };
-use std::f32::consts::TAU;
 use super::util::format_simulation_speed;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
+use std::f32::consts::TAU;
 
 pub(super) fn apply_lighting_preset(
     lighting_rig: Res<LightingRig>,
@@ -43,15 +43,27 @@ pub(super) fn sync_visibility_toggles(
     render_settings: Res<RenderSettings>,
     mut atmosphere_query: Query<
         &mut Visibility,
-        (With<AtmosphereLayer>, Without<StarsBackdrop>, Without<PlanetRing>),
+        (
+            With<AtmosphereLayer>,
+            Without<StarsBackdrop>,
+            Without<PlanetRing>,
+        ),
     >,
     mut stars_query: Query<
         &mut Visibility,
-        (With<StarsBackdrop>, Without<AtmosphereLayer>, Without<PlanetRing>),
+        (
+            With<StarsBackdrop>,
+            Without<AtmosphereLayer>,
+            Without<PlanetRing>,
+        ),
     >,
     mut ring_query: Query<
         &mut Visibility,
-        (With<PlanetRing>, Without<AtmosphereLayer>, Without<StarsBackdrop>),
+        (
+            With<PlanetRing>,
+            Without<AtmosphereLayer>,
+            Without<StarsBackdrop>,
+        ),
     >,
 ) {
     let atmosphere_visibility = visibility_for(render_settings.atmosphere_enabled);

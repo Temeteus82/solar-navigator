@@ -7,7 +7,7 @@ use super::types::{
 use super::util::format_simulation_speed;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
-use chrono::{Duration as ChronoDuration, NaiveDate};
+use chrono::{Datelike, Duration as ChronoDuration, NaiveDate};
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn draw_side_panel(
@@ -108,6 +108,9 @@ pub(super) fn draw_side_panel(
 
             ui.separator();
             ui.label("Jump to date:");
+            let max_day =
+                days_in_month(simulation_state.picker_year, simulation_state.picker_month);
+            simulation_state.picker_day = simulation_state.picker_day.clamp(1, max_day);
             ui.horizontal(|ui| {
                 ui.add(
                     egui::DragValue::new(&mut simulation_state.picker_year)
@@ -121,7 +124,7 @@ pub(super) fn draw_side_panel(
                 );
                 ui.add(
                     egui::DragValue::new(&mut simulation_state.picker_day)
-                        .range(1..=31)
+                        .range(1..=max_day)
                         .prefix("D "),
                 );
             });
@@ -217,6 +220,18 @@ pub(super) fn draw_side_panel(
         });
 
     Ok(())
+}
+
+fn days_in_month(year: i32, month: u32) -> u32 {
+    let (next_year, next_month) = if month == 12 {
+        (year + 1, 1)
+    } else {
+        (year, month + 1)
+    };
+    NaiveDate::from_ymd_opt(next_year, next_month, 1)
+        .and_then(|d| d.pred_opt())
+        .map(|d| d.day())
+        .unwrap_or(31)
 }
 
 fn format_large(value: f64) -> String {
