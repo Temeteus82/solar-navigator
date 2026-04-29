@@ -15,7 +15,7 @@ use bevy::post_process::auto_exposure::AutoExposurePlugin;
 use bevy::prelude::*;
 use bevy_egui::{EguiPlugin, EguiPrimaryContextPass};
 use chrono::{Datelike, Utc};
-use materials::PlanetAtmosphereMaterial;
+use materials::{PlanetAtmosphereMaterial, PlanetRingMaterial};
 use std::f32::consts::PI;
 use std::time::Duration;
 use types::{
@@ -84,6 +84,7 @@ pub(crate) fn run() {
             ..default()
         }))
         .add_plugins(MaterialPlugin::<PlanetAtmosphereMaterial>::default())
+        .add_plugins(MaterialPlugin::<PlanetRingMaterial>::default())
         .add_plugins(AutoExposurePlugin)
         .add_plugins(EguiPlugin::default())
         .add_systems(
@@ -106,6 +107,7 @@ pub(crate) fn run() {
                 camera::track_selected_body,
                 simulation::sync_atmosphere_positions,
                 simulation::sync_ring_positions,
+                simulation::sync_ring_material_uniforms,
                 camera::apply_camera_flight,
                 setup::process_horizons_sync_requests,
                 setup::poll_horizons_sync_task,
