@@ -23,6 +23,8 @@ use bevy::tasks::{AsyncComputeTaskPool, futures_lite::future};
 use chrono::Utc;
 use std::f32::consts::FRAC_PI_2;
 
+static ICON_PNG: &[u8] = include_bytes!("../../assets/icon/AppIcon.iconset/icon_256x256.png");
+
 const HORIZONS_RETRY_BASE_DELAY_SECS: f64 = 1.0;
 const HORIZONS_RETRY_MAX_DELAY_SECS: f64 = 30.0;
 const HORIZONS_RETRY_MAX_ATTEMPTS: u32 = 5;
@@ -618,6 +620,29 @@ fn run_horizons_sync_task(
         failures,
         per_body_au_offset,
     }
+}
+
+pub(super) fn set_window_icon(windows: Query<Entity, With<Window>>) {
+    let Ok(window_entity) = windows.single() else {
+        return;
+    };
+    let icon_image = match image::load_from_memory(ICON_PNG) {
+        Ok(img) => img.into_rgba8(),
+        Err(err) => {
+            eprintln!("Failed to decode window icon: {err}");
+            return;
+        }
+    };
+    let (width, height) = icon_image.dimensions();
+    let rgba = icon_image.into_raw();
+    bevy::winit::WINIT_WINDOWS.with_borrow(|winit_windows| {
+        if let Some(winit_window) = winit_windows.get_window(window_entity) {
+            match winit::window::Icon::from_rgba(rgba, width, height) {
+                Ok(icon) => winit_window.set_window_icon(Some(icon)),
+                Err(err) => eprintln!("Failed to create window icon: {err}"),
+            }
+        }
+    });
 }
 
 #[cfg(test)]
