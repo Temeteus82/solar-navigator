@@ -1,3 +1,4 @@
+use super::materials::PlanetRingMaterial;
 use super::types::{
     AU_TO_SCENE_UNITS, AtmosphereLayer, AtmosphereOf, BODIES, BodyEntity, BodyRuntime, BodyTrails,
     EphemerisResource, HorizonsSyncState, KM_PER_AU, MAX_SIMULATION_RATE_MULTIPLIER,
@@ -216,6 +217,26 @@ pub(super) fn sync_ring_positions(
         if let Some(position) = body_runtime.positions.get(ring.index) {
             transform.translation = position.as_vec3();
         }
+    }
+}
+
+/// Pushes the parent planet's current world-space position into each ring
+/// material's `planet_position` uniform so the WGSL shader can compute the
+/// cylindrical eclipse cast by the planet onto the ring disc.
+pub(super) fn sync_ring_material_uniforms(
+    body_runtime: Res<BodyRuntime>,
+    mut ring_materials: ResMut<Assets<PlanetRingMaterial>>,
+    ring_query: Query<(&RingOf, &MeshMaterial3d<PlanetRingMaterial>), With<PlanetRing>>,
+) {
+    for (ring, material_handle) in &ring_query {
+        let Some(position) = body_runtime.positions.get(ring.index) else {
+            continue;
+        };
+        let Some(material) = ring_materials.get_mut(&material_handle.0) else {
+            continue;
+        };
+        let p = position.as_vec3();
+        material.planet_position = Vec4::new(p.x, p.y, p.z, 0.0);
     }
 }
 
