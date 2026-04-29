@@ -11,6 +11,7 @@ use crate::ephemeris::{SpiceEphemeris, build_horizons_client};
 use bevy::light::PointLightShadowMap;
 use bevy::math::DVec3;
 use bevy::pbr::MaterialPlugin;
+use bevy::post_process::auto_exposure::AutoExposurePlugin;
 use bevy::prelude::*;
 use bevy_egui::{EguiPlugin, EguiPrimaryContextPass};
 use chrono::{Datelike, Utc};
@@ -83,6 +84,7 @@ pub(crate) fn run() {
             ..default()
         }))
         .add_plugins(MaterialPlugin::<PlanetAtmosphereMaterial>::default())
+        .add_plugins(AutoExposurePlugin)
         .add_plugins(EguiPlugin::default())
         .add_systems(
             Startup,
