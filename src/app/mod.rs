@@ -86,7 +86,12 @@ pub(crate) fn run() {
         .add_plugins(EguiPlugin::default())
         .add_systems(
             Startup,
-            (setup::setup_scene, setup::start_horizons_sync).chain(),
+            (
+                setup::setup_scene,
+                setup::start_horizons_sync,
+                setup::set_window_icon,
+            )
+                .chain(),
         )
         .add_systems(
             Update,
