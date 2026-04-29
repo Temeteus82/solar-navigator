@@ -1,6 +1,6 @@
 use super::types::{
     AU_TO_SCENE_UNITS, AppStatus, AtmosphereLayer, BODIES, BodyRuntime, BodyTrails, LightingRig,
-    PlanetRing, RenderSettings, SimulationState, StarsBackdrop, TRAIL_MAX_POINTS,
+    OrbitCameraState, PlanetRing, RenderSettings, SimulationState, StarsBackdrop, TRAIL_MAX_POINTS,
 };
 use super::util::format_simulation_speed;
 use bevy::prelude::*;
@@ -9,9 +9,11 @@ use std::f32::consts::TAU;
 
 pub(super) fn apply_lighting_preset(
     lighting_rig: Res<LightingRig>,
+    orbit_camera: Res<OrbitCameraState>,
     mut ambient: ResMut<GlobalAmbientLight>,
     mut point_lights: Query<&mut PointLight>,
     mut directional_lights: Query<&mut DirectionalLight>,
+    mut transforms: Query<&mut Transform>,
 ) {
     let Ok([mut solar_key, mut rim_fill]) =
         point_lights.get_many_mut([lighting_rig.solar_key, lighting_rig.rim_fill])
@@ -22,18 +24,34 @@ pub(super) fn apply_lighting_preset(
         return;
     };
 
-    // Realistic lighting: the Sun is the sole key light at scene origin.
-    // Inverse-square falloff produces a natural brightness gradient — Mercury
-    // and Venus are bright, outer planets are dim. Ambient and fill are kept
-    // low so the gradient is not washed out.
-    ambient.brightness = 0.3;
+    // The Sun's primary illumination is delivered by `sky_fill` as a
+    // DirectionalLight (no inverse-square falloff), so every planet
+    // receives equal sunlight regardless of its distance from origin.
+    // Each frame the light direction is updated to point from the Sun
+    // toward whatever the camera is focused on, keeping the lit
+    // hemisphere of the inspected body correctly oriented.
+    let target = orbit_camera.target;
+    let sun_dir = if target.length_squared() > 1e-4 {
+        target.normalize()
+    } else {
+        Vec3::new(1.0, -0.05, 0.0).normalize()
+    };
+    if let Ok(mut transform) = transforms.get_mut(lighting_rig.sky_fill) {
+        *transform = Transform::IDENTITY.looking_to(sun_dir, Vec3::Y);
+    }
 
-    solar_key.intensity = 1_600_000_000.0;
+    sky_fill.illuminance = 1_800.0;
+    sky_fill.color = Color::srgb(1.0, 0.97, 0.9);
+    sky_fill.shadows_enabled = true;
+
+    // Point light at the Sun is kept dim — its only role is to add a
+    // small amount of inner-system specular detail and bloom near the
+    // Sun itself. The directional light handles the actual planet shading.
+    solar_key.intensity = 80_000_000.0;
     solar_key.color = Color::srgb(1.0, 0.97, 0.9);
-    solar_key.shadows_enabled = true;
+    solar_key.shadows_enabled = false;
 
-    sky_fill.illuminance = 5.0;
-    sky_fill.color = Color::srgb(0.3, 0.35, 0.45);
+    ambient.brightness = 0.25;
 
     rim_fill.intensity = 0.0;
 }
