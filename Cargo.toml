@@ -44,5 +44,10 @@ bevy_egui = { version = "0.39.1", default-features = false, features = [
     "render",
 ] }
 chrono = { version = "0.4.42", default-features = false, features = ["clock", "std"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
 reqwest = { version = "0.11.27", default-features = false, features = ["blocking", "rustls-tls"] }
+winit = { version = "0.30", default-features = false }
 rust-spice = { version = "0.7.8", default-features = false, features = ["download", "lock"], optional = true }
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
