@@ -17,6 +17,7 @@ use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::light::{GeneratedEnvironmentMapLight, NotShadowCaster};
 use bevy::math::DVec3;
 use bevy::pbr::ScreenSpaceAmbientOcclusion;
+use bevy::post_process::auto_exposure::AutoExposure;
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, futures_lite::future};
@@ -56,6 +57,16 @@ pub(super) fn setup_scene(
         Camera3d::default(),
         Msaa::Off,
         Tonemapping::AcesFitted,
+        // Auto-exposure adapts to each planet's local light level so outer
+        // planets aren't crushed to black by the Sun's inverse-square falloff.
+        // Range is widened past the default (±8 stops) because solar-system
+        // luminance spans ~12 stops from Mercury to Neptune.
+        AutoExposure {
+            range: -10.0..=10.0,
+            speed_brighten: 5.0,
+            speed_darken: 3.0,
+            ..AutoExposure::default()
+        },
         Bloom {
             intensity: 0.11,
             high_pass_frequency: 0.92,
