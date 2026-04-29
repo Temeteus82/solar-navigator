@@ -132,7 +132,7 @@ At runtime, assets are resolved in this order:
 WITH_SPICE=1 ./scripts/package_linux.sh    # SPICE-enabled build
 
 # Windows (PowerShell)
-.\scripts\package_windows.ps1              # → dist/windows/ (.zip, .msi)
+.\scripts\package_windows.ps1              # → dist/windows/ (.zip)
 .\scripts\package_windows.ps1 -WithSpice
 ```
 
