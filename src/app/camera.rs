@@ -167,7 +167,7 @@ pub(super) fn update_camera_transform(
 }
 
 fn compute_target_distance_for_body(visual_radius: f32) -> f32 {
-    (visual_radius * 12.0).clamp(4.0, 120.0)
+    (visual_radius * 12.0).clamp(0.25, 120.0)
 }
 
 fn orient_camera_toward_sunward(orbit_camera: &mut OrbitCameraState, target_position: Vec3) {
@@ -195,7 +195,7 @@ mod tests {
 
     #[test]
     fn compute_target_distance_for_body_clamps_to_expected_bounds() {
-        assert_eq!(compute_target_distance_for_body(0.01), 4.0);
+        assert_eq!(compute_target_distance_for_body(0.001), 0.25);
         assert_eq!(compute_target_distance_for_body(2.0), 24.0);
         assert_eq!(compute_target_distance_for_body(20.0), 120.0);
     }
