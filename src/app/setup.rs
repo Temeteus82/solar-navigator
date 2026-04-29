@@ -62,8 +62,8 @@ pub(super) fn setup_scene(
         // Range is widened past the default (±8 stops) because solar-system
         // luminance spans ~12 stops from Mercury to Neptune.
         AutoExposure {
-            range: -10.0..=10.0,
-            speed_brighten: 5.0,
+            range: -2.0..=2.0,
+            speed_brighten: 2.0,
             speed_darken: 3.0,
             ..AutoExposure::default()
         },
@@ -252,7 +252,7 @@ pub(super) fn setup_scene(
         let sky_material = materials.add(StandardMaterial {
             base_color: Color::WHITE,
             base_color_texture: Some(sky_texture.clone()),
-            emissive: LinearRgba::rgb(1.0, 1.0, 1.0),
+            emissive: LinearRgba::BLACK,
             unlit: true,
             cull_mode: None,
             ..default()
@@ -312,7 +312,7 @@ pub(super) fn sync_environment_lighting_from_sky(
                 environment_map: cubemap_handle.clone(),
                 // Kept low so the solar key-light inverse-square falloff
                 // creates a realistic brightness gradient across the solar system.
-                intensity: 400.0,
+                intensity: 150.0,
                 rotation: Quat::IDENTITY,
                 affects_lightmapped_mesh_diffuse: true,
             });
