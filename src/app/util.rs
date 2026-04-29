@@ -63,6 +63,24 @@ pub(super) fn ring_mesh(
     meshes.add(mesh)
 }
 
+/// 1x1 opaque-white texture used as a fallback when a custom material
+/// requires a `Handle<Image>` but the on-disk asset is missing.
+pub(super) fn white_pixel_image() -> Image {
+    let mut image = Image::new(
+        Extent3d {
+            width: 1,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        vec![255, 255, 255, 255],
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::default(),
+    );
+    image.sampler = ImageSampler::linear();
+    image
+}
+
 pub(super) fn spawn_fallback_starfield(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,

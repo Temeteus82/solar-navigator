@@ -1,4 +1,4 @@
-use super::materials::PlanetAtmosphereMaterial;
+use super::materials::{PlanetAtmosphereMaterial, PlanetRingMaterial};
 use super::types::{
     AppPaths, AppStatus, AtmosphereLayer, AtmosphereOf, BODIES, BodyEntity, EphemerisResource,
     HorizonsHttpClient, HorizonsSyncResult, HorizonsSyncState, HorizonsSyncTaskInput,
@@ -7,7 +7,7 @@ use super::types::{
 };
 use super::util::{
     color_from_rgba, eclipj2000_to_scene, equirectangular_to_cubemap_image, linear_from_rgb,
-    ring_mesh, spawn_fallback_starfield, sphere_mesh,
+    ring_mesh, spawn_fallback_starfield, sphere_mesh, white_pixel_image,
 };
 use crate::ephemeris::{
     fetch_horizons_heliocentric_position_au_with_client, horizons_command_for_target,
@@ -37,12 +37,14 @@ pub(super) struct SkyEnvironmentState {
     applied_to_camera: bool,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn setup_scene(
     mut commands: Commands,
     paths: Res<AppPaths>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut atmosphere_materials: ResMut<Assets<PlanetAtmosphereMaterial>>,
+    mut ring_materials: ResMut<Assets<PlanetRingMaterial>>,
     mut images: ResMut<Assets<Image>>,
     asset_server: Res<AssetServer>,
 ) {
@@ -219,17 +221,29 @@ pub(super) fn setup_scene(
 
         if let Some(ring) = spec.rings {
             let ring_tex_path = texture_dir.join("saturn_ring.png");
-            let ring_texture = ring_tex_path
-                .is_file()
-                .then(|| asset_server.load::<Image>("textures/saturn_ring.png"));
+            let ring_texture = if ring_tex_path.is_file() {
+                asset_server.load::<Image>("textures/saturn_ring.png")
+            } else {
+                // PlanetRingMaterial requires a texture handle; fall back to a
+                // 1x1 white pixel so the tint colour drives the appearance.
+                images.add(white_pixel_image())
+            };
             let ring_handle = ring_mesh(&mut meshes, ring.inner_radius, ring.outer_radius, 128);
-            let ring_material = materials.add(StandardMaterial {
-                base_color: Color::srgba(0.83, 0.77, 0.56, 0.80),
-                base_color_texture: ring_texture,
-                alpha_mode: AlphaMode::Blend,
-                double_sided: true,
-                cull_mode: None,
-                ..default()
+            let ring_material = ring_materials.add(PlanetRingMaterial {
+                tint: Color::srgba(0.83, 0.77, 0.56, 0.92).to_linear(),
+                // x = inner_radius, y = outer_radius, z = planet_radius (umbra),
+                // w = ring_brightness
+                params: Vec4::new(
+                    ring.inner_radius,
+                    ring.outer_radius,
+                    spec.visual_radius,
+                    1.15,
+                ),
+                // x = forward_scatter, y = back_scatter, z = specular, w = ambient
+                lighting: Vec4::new(0.65, 0.45, 0.35, 0.06),
+                // Updated each frame from BodyRuntime::positions.
+                planet_position: Vec4::ZERO,
+                color_texture: ring_texture,
             });
             let tilt = Quat::from_rotation_x(ring.axial_tilt_degrees.to_radians());
             commands.spawn((
