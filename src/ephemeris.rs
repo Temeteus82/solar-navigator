@@ -380,8 +380,12 @@ pub const CHARON_ORBIT: SatelliteOrbit = SatelliteOrbit {
     semi_major_axis_km: CHARON_SEMI_MAJOR_AXIS_KM,
     period_days: 6.38723,
     phase_radians: 1.1,
-    z_wobble_factor: 0.03,
-    z_wobble_frequency: 1.4,
+    // No artificial out-of-plane bob: Charon's orbit is rotated into Pluto's
+    // equatorial plane by `apply_pluto_charon_center_positions`, which gives it
+    // its real ~120° inclination. Adding wobble on top would just jitter both
+    // bodies off the equatorial plane every frame.
+    z_wobble_factor: 0.0,
+    z_wobble_frequency: 0.0,
 };
 
 pub const IO_ORBIT: SatelliteOrbit = SatelliteOrbit {
