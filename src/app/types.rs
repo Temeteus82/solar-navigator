@@ -50,7 +50,20 @@ pub(super) struct BodySpec {
     pub(super) orbital_period_days: Option<f64>,
     pub(super) semi_major_axis_au: Option<f64>,
     pub(super) rings: Option<RingSpec>,
+    // Spin pole direction in scene space (Y-up). Default ECLIPTIC_POLE_SCENE.
+    // Used for the body's mesh orientation and as the orbit normal for any
+    // satellite parented to it (e.g. Charon orbits in Pluto's equatorial plane).
+    pub(super) pole_direction: [f32; 3],
 }
+
+// Ecliptic north pole expressed in scene space (Bevy Y-up). Default for every body
+// whose obliquity isn't separately specified.
+pub(super) const ECLIPTIC_POLE_SCENE: [f32; 3] = [0.0, 1.0, 0.0];
+
+// Pluto's IAU 2009 spin pole (RA = 132.993°, Dec = -6.163°), converted from
+// equatorial J2000 to ecliptic and remapped into scene space. Charon shares this
+// pole — the system is mutually tidally locked.
+pub(super) const PLUTO_POLE_SCENE: [f32; 3] = [-0.677_73, -0.387_86, -0.624_69];
 
 const fn sidereal_spin_radians_per_second(sidereal_period_days: f64) -> f32 {
     (std::f64::consts::TAU / (sidereal_period_days * SECONDS_PER_DAY)) as f32
@@ -298,6 +311,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         orbital_period_days: None,
         semi_major_axis_au: None,
         rings: None,
+        pole_direction: ECLIPTIC_POLE_SCENE,
     },
     BodySpec {
         display_name: "Mercury",
@@ -317,6 +331,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         orbital_period_days: Some(87.969),
         semi_major_axis_au: Some(0.387),
         rings: None,
+        pole_direction: ECLIPTIC_POLE_SCENE,
     },
     BodySpec {
         display_name: "Venus",
@@ -336,6 +351,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         orbital_period_days: Some(224.701),
         semi_major_axis_au: Some(0.723),
         rings: None,
+        pole_direction: ECLIPTIC_POLE_SCENE,
     },
     BodySpec {
         display_name: "Earth",
@@ -357,6 +373,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         orbital_period_days: Some(365.256),
         semi_major_axis_au: Some(1.0),
         rings: None,
+        pole_direction: ECLIPTIC_POLE_SCENE,
     },
     BodySpec {
         display_name: "Moon",
@@ -377,6 +394,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         orbital_period_days: None,
         semi_major_axis_au: None,
         rings: None,
+        pole_direction: ECLIPTIC_POLE_SCENE,
     },
     BodySpec {
         display_name: "Mars",
@@ -396,6 +414,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         orbital_period_days: Some(686.98),
         semi_major_axis_au: Some(1.524),
         rings: None,
+        pole_direction: ECLIPTIC_POLE_SCENE,
     },
     BodySpec {
         display_name: "Ceres",
@@ -415,6 +434,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         orbital_period_days: Some(1680.0),
         semi_major_axis_au: Some(2.767),
         rings: None,
+        pole_direction: ECLIPTIC_POLE_SCENE,
     },
     BodySpec {
         display_name: "Vesta",
@@ -434,6 +454,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         orbital_period_days: Some(1325.0),
         semi_major_axis_au: Some(2.361),
         rings: None,
+        pole_direction: ECLIPTIC_POLE_SCENE,
     },
     BodySpec {
         display_name: "Jupiter",
@@ -455,6 +476,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         orbital_period_days: Some(4332.589),
         semi_major_axis_au: Some(5.204),
         rings: None,
+        pole_direction: ECLIPTIC_POLE_SCENE,
     },
     BodySpec {
         display_name: "Io",
@@ -475,6 +497,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         orbital_period_days: None,
         semi_major_axis_au: None,
         rings: None,
+        pole_direction: ECLIPTIC_POLE_SCENE,
     },
     BodySpec {
         display_name: "Europa",
@@ -495,6 +518,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         orbital_period_days: None,
         semi_major_axis_au: None,
         rings: None,
+        pole_direction: ECLIPTIC_POLE_SCENE,
     },
     BodySpec {
         display_name: "Ganymede",
@@ -515,6 +539,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         orbital_period_days: None,
         semi_major_axis_au: None,
         rings: None,
+        pole_direction: ECLIPTIC_POLE_SCENE,
     },
     BodySpec {
         display_name: "Callisto",
@@ -535,6 +560,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         orbital_period_days: None,
         semi_major_axis_au: None,
         rings: None,
+        pole_direction: ECLIPTIC_POLE_SCENE,
     },
     BodySpec {
         display_name: "Saturn",
@@ -558,6 +584,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
             outer_radius: 3.53,
             axial_tilt_degrees: 26.73,
         }),
+        pole_direction: ECLIPTIC_POLE_SCENE,
     },
     BodySpec {
         display_name: "Uranus",
@@ -577,6 +604,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         orbital_period_days: Some(30_688.5),
         semi_major_axis_au: Some(19.201),
         rings: None,
+        pole_direction: ECLIPTIC_POLE_SCENE,
     },
     BodySpec {
         display_name: "Neptune",
@@ -596,6 +624,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         orbital_period_days: Some(60_182.0),
         semi_major_axis_au: Some(30.047),
         rings: None,
+        pole_direction: ECLIPTIC_POLE_SCENE,
     },
     BodySpec {
         display_name: "Pluto",
@@ -617,6 +646,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         orbital_period_days: Some(90_560.0),
         semi_major_axis_au: Some(39.482),
         rings: None,
+        pole_direction: PLUTO_POLE_SCENE,
     },
     BodySpec {
         display_name: "Charon",
@@ -637,6 +667,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         orbital_period_days: None,
         semi_major_axis_au: None,
         rings: None,
+        pole_direction: PLUTO_POLE_SCENE,
     },
 ];
 

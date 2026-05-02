@@ -141,7 +141,18 @@ fn satellite_scene_offset(
 }
 
 fn charon_relative_scene_offset(elapsed_simulation_days: f64, au_to_scene_units: f64) -> DVec3 {
-    satellite_scene_offset(&CHARON_ORBIT, elapsed_simulation_days, au_to_scene_units)
+    let analytic =
+        satellite_scene_offset(&CHARON_ORBIT, elapsed_simulation_days, au_to_scene_units);
+
+    // Tilt the orbit so its normal aligns with Pluto's spin pole instead of the
+    // ecliptic Y axis. Pluto and Charon are mutually tidally locked, so Charon
+    // orbits in Pluto's equatorial plane (~120° inclined to the ecliptic).
+    let Some(pluto_index) = body_index_for_target("PLUTO BARYCENTER") else {
+        return analytic;
+    };
+    let pluto_pole = Vec3::from_array(BODIES[pluto_index].pole_direction).normalize();
+    let tilt = Quat::from_rotation_arc(Vec3::Y, pluto_pole);
+    tilt.mul_vec3(analytic.as_vec3()).as_dvec3()
 }
 
 fn apply_jupiter_moon_positions(
