@@ -22,7 +22,6 @@ use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, futures_lite::future};
 use chrono::Utc;
-use std::f32::consts::FRAC_PI_2;
 
 static ICON_PNG: &[u8] = include_bytes!("../../assets/icon/AppIcon.iconset/icon_256x256.png");
 
@@ -180,9 +179,14 @@ pub(super) fn setup_scene(
             .spawn((
                 Mesh3d(sphere_handle),
                 MeshMaterial3d(material),
-                // Bevy UV-sphere mesh has poles on +Z/-Z; rotate once so poles align
-                // with world +Y/-Y, then spin around local Z to rotate about world Y.
-                Transform::from_rotation(Quat::from_rotation_x(-FRAC_PI_2)),
+                // Bevy UV-sphere mesh has poles on +Z/-Z; rotate so the local +Z axis
+                // aligns with the body's spin pole. Per-frame `rotate_local_z` then
+                // spins the texture around that axis. Matches `Quat::from_rotation_x(-FRAC_PI_2)`
+                // for the default ecliptic-Y pole and tilts e.g. Pluto onto its side.
+                Transform::from_rotation(Quat::from_rotation_arc(
+                    Vec3::Z,
+                    Vec3::from_array(spec.pole_direction).normalize(),
+                )),
                 BodyEntity { index },
             ))
             .id();
