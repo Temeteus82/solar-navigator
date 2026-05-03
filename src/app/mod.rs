@@ -89,12 +89,7 @@ pub(crate) fn run() {
         .add_plugins(EguiPlugin::default())
         .add_systems(
             Startup,
-            (
-                setup::setup_scene,
-                setup::start_horizons_sync,
-                setup::set_window_icon,
-            )
-                .chain(),
+            (setup::setup_scene, setup::start_horizons_sync).chain(),
         )
         .add_systems(
             Update,
@@ -113,6 +108,7 @@ pub(crate) fn run() {
                 setup::poll_horizons_sync_task,
                 setup::refresh_texture_status,
                 setup::sync_environment_lighting_from_sky,
+                setup::set_window_icon,
             ),
         )
         .add_systems(
