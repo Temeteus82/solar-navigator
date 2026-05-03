@@ -666,17 +666,9 @@ pub(super) fn set_window_icon(windows: Query<Entity, With<Window>>) {
     let rgba = icon_image.into_raw();
     bevy::winit::WINIT_WINDOWS.with_borrow(|winit_windows| {
         if let Some(winit_window) = winit_windows.get_window(window_entity) {
-            match winit::window::Icon::from_rgba(rgba.clone(), width, height) {
+            match winit::window::Icon::from_rgba(rgba, width, height) {
                 Ok(icon) => winit_window.set_window_icon(Some(icon)),
                 Err(err) => eprintln!("Failed to create window icon: {err}"),
-            }
-            #[cfg(target_os = "windows")]
-            {
-                use winit::platform::windows::WindowExtWindows;
-                match winit::window::Icon::from_rgba(rgba, width, height) {
-                    Ok(icon) => winit_window.set_taskbar_icon(Some(icon)),
-                    Err(err) => eprintln!("Failed to create taskbar icon: {err}"),
-                }
             }
         }
     });
