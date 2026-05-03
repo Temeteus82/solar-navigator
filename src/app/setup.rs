@@ -23,7 +23,8 @@ use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, futures_lite::future};
 use chrono::Utc;
 
-static ICON_PNG: &[u8] = include_bytes!("../../assets/icon/AppIcon.iconset/icon_256x256.png");
+static ICON_PNG_SMALL: &[u8] = include_bytes!("../../assets/icon/AppIcon.iconset/icon_32x32.png");
+static ICON_PNG_LARGE: &[u8] = include_bytes!("../../assets/icon/AppIcon.iconset/icon_256x256.png");
 
 const HORIZONS_RETRY_BASE_DELAY_SECS: f64 = 1.0;
 const HORIZONS_RETRY_MAX_DELAY_SECS: f64 = 30.0;
@@ -655,31 +656,46 @@ pub(super) fn set_window_icon(windows: Query<Entity, With<Window>>) {
     let Ok(window_entity) = windows.single() else {
         return;
     };
-    let icon_image = match image::load_from_memory(ICON_PNG) {
-        Ok(img) => img.into_rgba8(),
-        Err(err) => {
-            eprintln!("Failed to decode window icon: {err}");
-            return;
-        }
+    let small = match decode_icon(ICON_PNG_SMALL) {
+        Some(v) => v,
+        None => return,
     };
-    let (width, height) = icon_image.dimensions();
-    let rgba = icon_image.into_raw();
+    let large = match decode_icon(ICON_PNG_LARGE) {
+        Some(v) => v,
+        None => return,
+    };
     bevy::winit::WINIT_WINDOWS.with_borrow(|winit_windows| {
         if let Some(winit_window) = winit_windows.get_window(window_entity) {
-            match winit::window::Icon::from_rgba(rgba.clone(), width, height) {
+            match winit::window::Icon::from_rgba(small.0, small.1, small.2) {
                 Ok(icon) => winit_window.set_window_icon(Some(icon)),
                 Err(err) => eprintln!("Failed to create window icon: {err}"),
             }
             #[cfg(target_os = "windows")]
             {
                 use winit::platform::windows::WindowExtWindows;
-                match winit::window::Icon::from_rgba(rgba, width, height) {
+                match winit::window::Icon::from_rgba(large.0, large.1, large.2) {
                     Ok(icon) => winit_window.set_taskbar_icon(Some(icon)),
                     Err(err) => eprintln!("Failed to create taskbar icon: {err}"),
                 }
             }
+            #[cfg(not(target_os = "windows"))]
+            let _ = large;
         }
     });
+}
+
+fn decode_icon(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
+    match image::load_from_memory(bytes) {
+        Ok(img) => {
+            let rgba = img.into_rgba8();
+            let (w, h) = rgba.dimensions();
+            Some((rgba.into_raw(), w, h))
+        }
+        Err(err) => {
+            eprintln!("Failed to decode window icon: {err}");
+            None
+        }
+    }
 }
 
 #[cfg(test)]
