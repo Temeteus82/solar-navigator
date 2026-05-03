@@ -93,7 +93,6 @@ pub(crate) fn run() {
             (
                 setup::setup_scene,
                 setup::start_horizons_sync,
-                setup::set_window_icon,
                 asteroids::spawn_asteroid_belt,
             )
                 .chain(),
@@ -117,6 +116,7 @@ pub(crate) fn run() {
                 setup::sync_environment_lighting_from_sky,
                 asteroids::update_asteroid_positions,
                 asteroids::sync_asteroid_visibility,
+                setup::set_window_icon,
             ),
         )
         .add_systems(

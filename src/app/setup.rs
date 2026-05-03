@@ -652,36 +652,44 @@ fn run_horizons_sync_task(
     }
 }
 
-pub(super) fn set_window_icon(windows: Query<Entity, With<Window>>) {
+pub(super) fn set_window_icon(
+    _marker: bevy::ecs::system::NonSendMarker,
+    windows: Query<Entity, With<Window>>,
+    mut done: Local<bool>,
+) {
+    if *done {
+        return;
+    }
     let Ok(window_entity) = windows.single() else {
         return;
     };
-    let small = match decode_icon(ICON_PNG_SMALL) {
-        Some(v) => v,
-        None => return,
-    };
-    let large = match decode_icon(ICON_PNG_LARGE) {
-        Some(v) => v,
-        None => return,
-    };
+    let mut applied = false;
     bevy::winit::WINIT_WINDOWS.with_borrow(|winit_windows| {
-        if let Some(winit_window) = winit_windows.get_window(window_entity) {
-            match winit::window::Icon::from_rgba(small.0, small.1, small.2) {
-                Ok(icon) => winit_window.set_window_icon(Some(icon)),
-                Err(err) => eprintln!("Failed to create window icon: {err}"),
-            }
-            #[cfg(target_os = "windows")]
-            {
-                use winit::platform::windows::WindowExtWindows;
+        let Some(winit_window) = winit_windows.get_window(window_entity) else {
+            return;
+        };
+        let Some(small) = decode_icon(ICON_PNG_SMALL) else {
+            return;
+        };
+        match winit::window::Icon::from_rgba(small.0, small.1, small.2) {
+            Ok(icon) => winit_window.set_window_icon(Some(icon)),
+            Err(err) => eprintln!("Failed to create window icon: {err}"),
+        }
+        #[cfg(target_os = "windows")]
+        {
+            use winit::platform::windows::WindowExtWindows;
+            if let Some(large) = decode_icon(ICON_PNG_LARGE) {
                 match winit::window::Icon::from_rgba(large.0, large.1, large.2) {
                     Ok(icon) => winit_window.set_taskbar_icon(Some(icon)),
                     Err(err) => eprintln!("Failed to create taskbar icon: {err}"),
                 }
             }
-            #[cfg(not(target_os = "windows"))]
-            let _ = large;
         }
+        applied = true;
     });
+    if applied {
+        *done = true;
+    }
 }
 
 fn decode_icon(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
