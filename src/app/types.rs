@@ -191,6 +191,7 @@ pub(super) struct RenderSettings {
     pub(super) trails_enabled: bool,
     pub(super) rings_enabled: bool,
     pub(super) orbits_enabled: bool,
+    pub(super) asteroids_enabled: bool,
 }
 
 impl Default for RenderSettings {
@@ -201,6 +202,7 @@ impl Default for RenderSettings {
             trails_enabled: true,
             rings_enabled: true,
             orbits_enabled: false,
+            asteroids_enabled: true,
         }
     }
 }
