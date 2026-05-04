@@ -29,7 +29,13 @@ Additional optional textures:
 From project root:
 
 ```bash
+# macOS / Linux
 ./scripts/download_textures_solar_system_scope.sh
+```
+
+```powershell
+# Windows
+.\scripts\download_textures_solar_system_scope.ps1
 ```
 
 This script pulls textures from Solar System Scope public endpoints.
@@ -38,13 +44,25 @@ Before shipping or redistributing, verify current attribution/license terms.
 Minor-body science textures:
 
 ```bash
+# macOS / Linux
 ./scripts/download_textures_minor_bodies_science.sh
+```
+
+```powershell
+# Windows
+.\scripts\download_textures_minor_bodies_science.ps1
 ```
 
 Heavy full-resolution source products (converted locally to JPEG):
 
 ```bash
+# macOS / Linux
 FULL_RES=1 TARGET_WIDTH=4096 ./scripts/download_textures_minor_bodies_science.sh
+```
+
+```powershell
+# Windows
+.\scripts\download_textures_minor_bodies_science.ps1 -FullRes -TargetWidth 4096
 ```
 
 ## Attribution
