@@ -29,9 +29,16 @@ pub(super) fn draw_side_panel(
         "Fallback"
     };
 
+    let ctx = contexts.ctx_mut()?;
+    // Suppress the panel's right-edge stroke so its background sits flush
+    // against the 3D viewport — otherwise egui draws a 1px separator line
+    // (tinted by the Windows accent color) between the panel and the scene.
+    let panel_frame = egui::Frame::side_top_panel(&ctx.style()).stroke(egui::Stroke::NONE);
+
     egui::SidePanel::left("navigator_side_panel")
         .exact_width(SIDE_PANEL_WIDTH_PX)
-        .show(contexts.ctx_mut()?, |ui| {
+        .frame(panel_frame)
+        .show(ctx, |ui| {
             ui.heading("Solar Navigator");
             ui.label(format!("Mode: {mode_text}"));
             ui.small(&app_status.status_line);
