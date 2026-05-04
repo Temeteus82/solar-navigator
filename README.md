@@ -62,14 +62,14 @@ cargo run --release --features spice
 ```powershell
 Set-Location C:\path\to\solar-navigator
 .\scripts\setup_cspice_windows_x86_64.ps1
-bash ./scripts/download_spice_kernels.sh
-bash ./scripts/download_textures_solar_system_scope.sh
-bash ./scripts/download_textures_minor_bodies_science.sh
+.\scripts\download_spice_kernels.ps1
+.\scripts\download_textures_solar_system_scope.ps1
+.\scripts\download_textures_minor_bodies_science.ps1
 cargo run --release --features spice
 ```
 
-The texture and kernel download scripts are Bash scripts; run them from Git Bash/WSL, or
-invoke them from PowerShell via `bash ...` as shown above.
+The Windows setup is fully native PowerShell — no bash, Git Bash, or WSL required. Each
+download script accepts `-Force` to re-download files that are already present.
 
 ---
 

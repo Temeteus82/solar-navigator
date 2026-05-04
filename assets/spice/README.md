@@ -13,7 +13,13 @@ Optional kernels loaded if present:
 Use this from project root to fetch the kernels:
 
 ```bash
+# macOS / Linux
 ./scripts/download_spice_kernels.sh
+```
+
+```powershell
+# Windows
+.\scripts\download_spice_kernels.ps1
 ```
 
 For redistribution and licensing context, see:
