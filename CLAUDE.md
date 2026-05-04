@@ -87,6 +87,13 @@ cargo install cargo-sweep
 ./scripts/download_textures_solar_system_scope.sh
 ```
 
+```powershell
+# Windows (x86_64) — native PowerShell, no bash required
+./scripts/setup_cspice_windows_x86_64.ps1
+./scripts/download_spice_kernels.ps1
+./scripts/download_textures_solar_system_scope.ps1
+```
+
 ## Architecture
 
 ### Module layout
