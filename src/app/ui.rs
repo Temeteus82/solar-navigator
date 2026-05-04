@@ -151,6 +151,7 @@ pub(super) fn draw_side_panel(
             ui.checkbox(&mut render_settings.trails_enabled, "Orbital trails");
             ui.checkbox(&mut render_settings.rings_enabled, "Planetary rings");
             ui.checkbox(&mut render_settings.orbits_enabled, "Orbital paths");
+            ui.checkbox(&mut render_settings.asteroids_enabled, "Asteroid belt");
 
             if let Some(selected_index) = simulation_state.selected_body_index
                 && let Some(spec) = BODIES.get(selected_index)
