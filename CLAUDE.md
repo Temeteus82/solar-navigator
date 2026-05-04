@@ -92,6 +92,7 @@ cargo install cargo-sweep
 ./scripts/setup_cspice_windows_x86_64.ps1
 ./scripts/download_spice_kernels.ps1
 ./scripts/download_textures_solar_system_scope.ps1
+./scripts/download_textures_minor_bodies_science.ps1
 ```
 
 ## Architecture
