@@ -134,6 +134,11 @@ WITH_SPICE=1 ./scripts/package_linux.sh    # SPICE-enabled build
 # Windows (PowerShell)
 .\scripts\package_windows.ps1              # → dist/windows/ (.zip)
 .\scripts\package_windows.ps1 -WithSpice
+
+# Windows installer (requires NSIS — `winget install NSIS.NSIS`)
+# Builds both SPICE and fallback binaries; the installer asks the
+# user which one to install, then downloads textures in the background.
+.\scripts\package_windows_installer.ps1    # → dist/windows/solar-navigator-<ver>-win64-setup.exe
 ```
 
 ## Linux Distro Coverage
