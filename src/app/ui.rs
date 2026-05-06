@@ -30,13 +30,34 @@ pub(super) fn draw_side_panel(
     };
 
     let ctx = contexts.ctx_mut()?;
-    // Suppress the panel's right-edge stroke so its background sits flush
-    // against the 3D viewport — otherwise egui draws a 1px separator line
-    // (tinted by the Windows accent color) between the panel and the scene.
-    let panel_frame = egui::Frame::side_top_panel(&ctx.style()).stroke(egui::Stroke::NONE);
+    ctx.style_mut(|style| {
+        // Bump every text style up by 1pt from egui defaults.
+        for (style_key, font_id) in style.text_styles.iter_mut() {
+            font_id.size = match style_key {
+                egui::TextStyle::Small => 11.0,
+                egui::TextStyle::Body => 15.0,
+                egui::TextStyle::Monospace => 15.0,
+                egui::TextStyle::Button => 15.0,
+                egui::TextStyle::Heading => 21.0,
+                _ => font_id.size,
+            };
+        }
+    });
+    // Zero the right inner_margin so the panel background butts flush against
+    // the 3D viewport with no blank gutter. Keep left/top/bottom margins.
+    let panel_frame = egui::Frame::side_top_panel(&ctx.style())
+        .stroke(egui::Stroke::NONE)
+        .inner_margin(egui::Margin {
+            left: 8,
+            right: 0,
+            top: 2,
+            bottom: 2,
+        });
 
     egui::SidePanel::left("navigator_side_panel")
         .exact_width(SIDE_PANEL_WIDTH_PX)
+        .resizable(false)
+        .show_separator_line(false)
         .frame(panel_frame)
         .show(ctx, |ui| {
             ui.heading("Solar Navigator");
