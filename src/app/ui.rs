@@ -30,13 +30,35 @@ pub(super) fn draw_side_panel(
     };
 
     let ctx = contexts.ctx_mut()?;
-    // Suppress the panel's right-edge stroke so its background sits flush
-    // against the 3D viewport — otherwise egui draws a 1px separator line
-    // (tinted by the Windows accent color) between the panel and the scene.
-    let panel_frame = egui::Frame::side_top_panel(&ctx.style()).stroke(egui::Stroke::NONE);
+    ctx.style_mut(|style| {
+        // Bump every text style up by 1pt from egui defaults.
+        for (style_key, font_id) in style.text_styles.iter_mut() {
+            font_id.size = match style_key {
+                egui::TextStyle::Small => 11.0,
+                egui::TextStyle::Body => 15.0,
+                egui::TextStyle::Monospace => 15.0,
+                egui::TextStyle::Button => 15.0,
+                egui::TextStyle::Heading => 21.0,
+                _ => font_id.size,
+            };
+        }
+    });
+    // Keep a small right inner_margin for readability but not so wide that
+    // the blank gutter makes the separator visible. The separator line itself
+    // is suppressed via show_separator_line(false) below.
+    let panel_frame = egui::Frame::side_top_panel(&ctx.style())
+        .stroke(egui::Stroke::NONE)
+        .inner_margin(egui::Margin {
+            left: 8,
+            right: 4,
+            top: 2,
+            bottom: 2,
+        });
 
     egui::SidePanel::left("navigator_side_panel")
         .exact_width(SIDE_PANEL_WIDTH_PX)
+        .resizable(false)
+        .show_separator_line(false)
         .frame(panel_frame)
         .show(ctx, |ui| {
             ui.heading("Solar Navigator");
@@ -207,24 +229,32 @@ pub(super) fn draw_side_panel(
 
             ui.separator();
             let filter_lc = simulation_state.target_filter.trim().to_ascii_lowercase();
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                for (index, body) in BODIES.iter().enumerate() {
-                    let label = body.display_name;
-                    if !filter_lc.is_empty() && !label.to_ascii_lowercase().contains(&filter_lc) {
-                        continue;
-                    }
-
-                    if ui
-                        .selectable_label(
-                            simulation_state.selected_body_index == Some(index),
-                            label,
-                        )
-                        .clicked()
-                    {
-                        simulation_state.jump_request = Some(index);
-                    }
-                }
-            });
+            egui::ScrollArea::vertical()
+                .scroll_bar_visibility(
+                    egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded,
+                )
+                .show(ui, |ui| {
+                    // top_down_justified stretches each item to the full panel
+                    // width and keeps text left-aligned.
+                    ui.with_layout(
+                        egui::Layout::top_down_justified(egui::Align::LEFT),
+                        |ui| {
+                            for (index, body) in BODIES.iter().enumerate() {
+                                let label = body.display_name;
+                                if !filter_lc.is_empty()
+                                    && !label.to_ascii_lowercase().contains(&filter_lc)
+                                {
+                                    continue;
+                                }
+                                let selected =
+                                    simulation_state.selected_body_index == Some(index);
+                                if ui.selectable_label(selected, label).clicked() {
+                                    simulation_state.jump_request = Some(index);
+                                }
+                            }
+                        },
+                    );
+                });
         });
 
     Ok(())
