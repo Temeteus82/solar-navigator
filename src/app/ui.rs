@@ -230,30 +230,24 @@ pub(super) fn draw_side_panel(
             ui.separator();
             let filter_lc = simulation_state.target_filter.trim().to_ascii_lowercase();
             egui::ScrollArea::vertical()
-                .scroll_bar_visibility(
-                    egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded,
-                )
+                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
                 .show(ui, |ui| {
                     // top_down_justified stretches each item to the full panel
                     // width and keeps text left-aligned.
-                    ui.with_layout(
-                        egui::Layout::top_down_justified(egui::Align::LEFT),
-                        |ui| {
-                            for (index, body) in BODIES.iter().enumerate() {
-                                let label = body.display_name;
-                                if !filter_lc.is_empty()
-                                    && !label.to_ascii_lowercase().contains(&filter_lc)
-                                {
-                                    continue;
-                                }
-                                let selected =
-                                    simulation_state.selected_body_index == Some(index);
-                                if ui.selectable_label(selected, label).clicked() {
-                                    simulation_state.jump_request = Some(index);
-                                }
+                    ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
+                        for (index, body) in BODIES.iter().enumerate() {
+                            let label = body.display_name;
+                            if !filter_lc.is_empty()
+                                && !label.to_ascii_lowercase().contains(&filter_lc)
+                            {
+                                continue;
                             }
-                        },
-                    );
+                            let selected = simulation_state.selected_body_index == Some(index);
+                            if ui.selectable_label(selected, label).clicked() {
+                                simulation_state.jump_request = Some(index);
+                            }
+                        }
+                    });
                 });
         });
 
