@@ -108,7 +108,7 @@ src/
     types.rs         — every Resource, Component, and the BODIES constant array
     setup.rs         — Startup systems: scene spawn, texture loading, Horizons sync task
     simulation.rs    — Update systems: keyboard input, time advance, body positions
-    camera.rs        — Update systems: orbit camera, jump/fly-to, tracking
+    camera.rs        — Update systems: orbit + free-fly cameras, mode toggle (F), jump/fly-to, tracking
     render.rs        — Update systems: lighting presets, visibility, window title
     asteroids.rs     — Procedural asteroid belt: Keplerian swarm spawn + per-frame update
     materials.rs     — PlanetAtmosphereMaterial + PlanetRingMaterial (custom Bevy Materials, WGSL)
@@ -144,6 +144,20 @@ The same sign convention applies to the Horizons sync offset stored in `Horizons
 ### Horizons sync
 
 On startup (SPICE mode only), `setup::start_horizons_sync` spawns an async task that calls NASA JPL Horizons for each body's current heliocentric position and computes per-body AU offsets relative to what SPICE reports (`per_body_au_offset`). These offsets are added each frame in `update_body_positions` to correct for any kernel/reference-frame drift. The task retries up to 5 times with exponential backoff (1 s, 2 s, 4 s … capped at 30 s). Manual retry is available via the UI button.
+
+### Camera modes
+
+`OrbitCameraState::mode` (`CameraMode::Orbit | Free`) selects between two cameras; `F`
+toggles, and the egui panel exposes a button. **Orbit** (default) is the target-tethered
+inspection camera (drag to orbit, shift-drag to pan, scroll to zoom, click a body to
+fly-to and track). **Free** is an untethered fly-cam: WASD to move, Q/E down/up, drag to
+look, Shift to boost. Free-cam speed auto-scales with the distance to the nearest body
+(`FREE_CAMERA_*` constants in `types.rs`) so the same controls work for close inspection
+and interplanetary travel. Mode-switches hand off seamlessly — entering Free seeds the
+fly-cam from the orbit pose; leaving re-tethers to the selected (or nearest) body without
+snapping the view. The orbit-only systems (`orbit_camera_input`, `track_selected_body`,
+`apply_camera_flight`) early-return when in Free mode, and `free_camera_input` is inert in
+Orbit mode. `update_camera_transform` branches on the mode to build the final transform.
 
 ### Lighting and AU scale
 
