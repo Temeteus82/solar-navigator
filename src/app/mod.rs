@@ -71,6 +71,7 @@ pub(crate) fn run() {
             start_utc: Utc::now(),
         })
         .insert_resource(OrbitCameraState {
+            mode: types::CameraMode::default(),
             yaw: PI,
             pitch: (55.0_f32 / 188.3_f32).asin(),
             distance: 188.3,
@@ -78,6 +79,9 @@ pub(crate) fn run() {
             max_distance: 30_000.0,
             target: Vec3::ZERO,
             flight: None,
+            free_position: Vec3::ZERO,
+            free_yaw: 0.0,
+            free_pitch: 0.0,
         })
         .insert_non_send_resource(EphemerisResource { ephemeris })
         .add_plugins(DefaultPlugins.set(AssetPlugin {
@@ -102,8 +106,10 @@ pub(crate) fn run() {
             (
                 simulation::keyboard_controls,
                 simulation::advance_simulation_time,
+                camera::toggle_camera_mode,
                 camera::handle_jump_requests,
                 camera::orbit_camera_input,
+                camera::free_camera_input,
                 simulation::update_body_positions,
                 camera::track_selected_body,
                 simulation::sync_atmosphere_positions,
