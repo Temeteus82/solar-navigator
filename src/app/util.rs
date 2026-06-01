@@ -401,8 +401,13 @@ fn generate_starfield(count: usize) -> Vec<StarPoint> {
     stars
 }
 
-fn random01(seed: &mut u64) -> f32 {
-    *seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+/// Shared deterministic LCG (Knuth MMIX constants) returning a value in
+/// `[0, 1]`. Used by both the procedural starfield and the asteroid belt so a
+/// single seeded sequence is reproducible across the codebase.
+pub(super) fn random01(seed: &mut u64) -> f32 {
+    *seed = seed
+        .wrapping_mul(6364136223846793005)
+        .wrapping_add(1442695040888963407);
     ((*seed >> 32) as u32) as f32 / u32::MAX as f32
 }
 
