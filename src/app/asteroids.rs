@@ -13,7 +13,7 @@
 //! looks the same across runs.
 
 use super::types::{AU_TO_SCENE_UNITS, AppPaths, RenderSettings, SECONDS_PER_DAY, SimulationState};
-use super::util::eclipj2000_to_scene;
+use super::util::{eclipj2000_to_scene, random01};
 use bevy::asset::RenderAssetUsages;
 use bevy::math::DVec3;
 use bevy::mesh::{Indices, PrimitiveTopology};
@@ -146,15 +146,15 @@ pub(super) fn spawn_asteroid_belt(
         // --- orbital elements -------------------------------------------------
         // Power-law-ish radial distribution biased slightly toward the
         // inner belt, where real density peaks.
-        let r1 = rand01(&mut rng_state) as f64;
+        let r1 = random01(&mut rng_state) as f64;
         let a = INNER_AU + (OUTER_AU - INNER_AU) * r1.powf(0.85);
-        let e = (rand01(&mut rng_state) as f64).powi(2) * MAX_ECCENTRICITY;
+        let e = (random01(&mut rng_state) as f64).powi(2) * MAX_ECCENTRICITY;
         // Square biasing keeps most asteroids near the ecliptic with a
         // long tail of inclined ones — matches the observed distribution.
-        let i = (rand01(&mut rng_state) as f64).powi(2) * MAX_INCLINATION_RAD;
-        let raan = (rand01(&mut rng_state) as f64) * TAU;
-        let arg_peri = (rand01(&mut rng_state) as f64) * TAU;
-        let mean_anomaly_at_epoch = (rand01(&mut rng_state) as f64) * TAU;
+        let i = (random01(&mut rng_state) as f64).powi(2) * MAX_INCLINATION_RAD;
+        let raan = (random01(&mut rng_state) as f64) * TAU;
+        let arg_peri = (random01(&mut rng_state) as f64) * TAU;
+        let mean_anomaly_at_epoch = (random01(&mut rng_state) as f64) * TAU;
 
         // Kepler's third law in solar-mass units: T(years) = a^1.5.
         let period_years = a.powf(1.5);
@@ -162,8 +162,8 @@ pub(super) fn spawn_asteroid_belt(
         let mean_motion = TAU / period_seconds;
 
         // Spin: a few hours to a couple days. Sign random for retrograde.
-        let spin_hours = 4.0 + rand01(&mut rng_state) * 60.0;
-        let spin_sign = if rand01(&mut rng_state) < 0.5 {
+        let spin_hours = 4.0 + random01(&mut rng_state) * 60.0;
+        let spin_sign = if random01(&mut rng_state) < 0.5 {
             -1.0
         } else {
             1.0
@@ -184,18 +184,18 @@ pub(super) fn spawn_asteroid_belt(
         // --- render params ----------------------------------------------------
         // Pick one of the base meshes; non-uniform scale + tilt produce
         // unique-looking rocks from a handful of templates.
-        let variant = (rand01(&mut rng_state) * MESH_VARIANT_COUNT as f32).floor() as usize
+        let variant = (random01(&mut rng_state) * MESH_VARIANT_COUNT as f32).floor() as usize
             % MESH_VARIANT_COUNT;
-        let size_jitter = 0.5 + rand01(&mut rng_state) * 1.8; // 0.5×–2.3×
-        let scale_x = BASE_VISUAL_RADIUS * size_jitter * (0.75 + rand01(&mut rng_state) * 0.5);
-        let scale_y = BASE_VISUAL_RADIUS * size_jitter * (0.75 + rand01(&mut rng_state) * 0.5);
-        let scale_z = BASE_VISUAL_RADIUS * size_jitter * (0.75 + rand01(&mut rng_state) * 0.5);
+        let size_jitter = 0.5 + random01(&mut rng_state) * 1.8; // 0.5×–2.3×
+        let scale_x = BASE_VISUAL_RADIUS * size_jitter * (0.75 + random01(&mut rng_state) * 0.5);
+        let scale_y = BASE_VISUAL_RADIUS * size_jitter * (0.75 + random01(&mut rng_state) * 0.5);
+        let scale_z = BASE_VISUAL_RADIUS * size_jitter * (0.75 + random01(&mut rng_state) * 0.5);
 
         let initial_rotation = Quat::from_euler(
             EulerRot::XYZ,
-            rand01(&mut rng_state) * std::f32::consts::TAU,
-            rand01(&mut rng_state) * std::f32::consts::TAU,
-            rand01(&mut rng_state) * std::f32::consts::TAU,
+            random01(&mut rng_state) * std::f32::consts::TAU,
+            random01(&mut rng_state) * std::f32::consts::TAU,
+            random01(&mut rng_state) * std::f32::consts::TAU,
         );
 
         commands.spawn((
@@ -400,16 +400,6 @@ fn build_lumpy_asteroid_mesh(seed: u64) -> Mesh {
     mesh.compute_smooth_normals();
     mesh
 }
-
-// Same LCG used elsewhere in `util.rs` — keeping it local avoids a public
-// surface but stays bit-for-bit deterministic for the given `SEED`.
-fn rand01(state: &mut u64) -> f32 {
-    *state = state
-        .wrapping_mul(6364136223846793005)
-        .wrapping_add(1442695040888963407);
-    ((*state >> 32) as u32) as f32 / u32::MAX as f32
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
