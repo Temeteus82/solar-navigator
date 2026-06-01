@@ -173,13 +173,15 @@ pub(super) fn draw_orbit_paths(
         let is_selected = simulation_state.selected_body_index == Some(index);
         let alpha = if is_selected { 0.55 } else { 0.12 };
         let color = Color::srgba(spec.color[0], spec.color[1], spec.color[2], alpha);
-        let points: Vec<Vec3> = (0..=128)
-            .map(|i| {
+        // Feed the ring points straight into the gizmo iterator instead of
+        // collecting into a per-frame Vec for every body.
+        gizmos.linestrip(
+            (0..=128).map(|i| {
                 let a = i as f32 / 128.0 * TAU;
                 Vec3::new(radius * a.cos(), 0.0, radius * a.sin())
-            })
-            .collect();
-        gizmos.linestrip(points, color);
+            }),
+            color,
+        );
     }
 }
 
