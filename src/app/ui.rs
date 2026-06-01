@@ -1,6 +1,7 @@
+use super::camera::toggle_camera_mode_impl;
 use super::types::{
-    AU_TO_SCENE_UNITS, AppStatus, BODIES, BodyRuntime, BodyTrails, HorizonsSyncState, KM_PER_AU,
-    MAX_SIMULATION_RATE_MULTIPLIER, MIN_SIMULATION_RATE_MULTIPLIER, OrbitCameraState,
+    AU_TO_SCENE_UNITS, AppStatus, BODIES, BodyRuntime, BodyTrails, CameraMode, HorizonsSyncState,
+    KM_PER_AU, MAX_SIMULATION_RATE_MULTIPLIER, MIN_SIMULATION_RATE_MULTIPLIER, OrbitCameraState,
     RenderSettings, SECONDS_PER_DAY, SIDE_PANEL_WIDTH_PX, SimulationEpoch, SimulationState,
     TextureStatus,
 };
@@ -17,7 +18,7 @@ pub(super) fn draw_side_panel(
     mut horizons_sync: ResMut<HorizonsSyncState>,
     mut simulation_state: ResMut<SimulationState>,
     mut render_settings: ResMut<RenderSettings>,
-    orbit_camera: Res<OrbitCameraState>,
+    mut orbit_camera: ResMut<OrbitCameraState>,
     texture_status: Res<TextureStatus>,
     simulation_epoch: Res<SimulationEpoch>,
     body_runtime: Res<BodyRuntime>,
@@ -219,10 +220,28 @@ pub(super) fn draw_side_panel(
             }
 
             ui.separator();
+            let camera_mode_label = match orbit_camera.mode {
+                CameraMode::Orbit => "Orbit",
+                CameraMode::Free => "Free fly",
+            };
+            ui.label(format!("Camera: {camera_mode_label}"));
+            if ui.button("Toggle free camera (F)").clicked() {
+                toggle_camera_mode_impl(&mut orbit_camera, &mut simulation_state, &body_runtime);
+            }
+
+            ui.separator();
             ui.label("Controls:");
-            ui.label("- Left or right drag: orbit");
-            ui.label("- Shift + left drag: pan");
-            ui.label("- Mouse wheel / trackpad scroll: zoom");
+            if orbit_camera.mode == CameraMode::Free {
+                ui.label("- WASD: move, Q/E: down/up");
+                ui.label("- Drag: look around");
+                ui.label("- Shift: boost speed");
+                ui.label("- F: back to orbit camera");
+            } else {
+                ui.label("- Left or right drag: orbit");
+                ui.label("- Shift + left drag: pan");
+                ui.label("- Mouse wheel / trackpad scroll: zoom");
+                ui.label("- F: free camera");
+            }
             ui.label("- Space: pause/unpause");
             ui.label("- Up/Down: simulation speed");
             ui.label("- Backspace: reset time/view");
