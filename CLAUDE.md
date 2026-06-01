@@ -110,7 +110,8 @@ src/
     simulation.rs    — Update systems: keyboard input, time advance, body positions
     camera.rs        — Update systems: orbit camera, jump/fly-to, tracking
     render.rs        — Update systems: lighting presets, visibility, window title
-    materials.rs     — PlanetAtmosphereMaterial (custom Bevy Material backed by WGSL)
+    asteroids.rs     — Procedural asteroid belt: Keplerian swarm spawn + per-frame update
+    materials.rs     — PlanetAtmosphereMaterial + PlanetRingMaterial (custom Bevy Materials, WGSL)
     ui.rs            — egui side panel (EguiPrimaryContextPass schedule)
     util.rs          — asset resolution, image/starfield helpers, format_simulation_speed
 ```
@@ -146,12 +147,20 @@ On startup (SPICE mode only), `setup::start_horizons_sync` spawns an async task 
 
 ### Lighting and AU scale
 
-The app uses a single Realistic lighting mode. `AU_TO_SCENE_UNITS = 250.0` is the fixed
-scale constant in `types.rs`. `render.rs:apply_lighting_preset` configures the solar key
-light (1.6 GW point light at origin, `shadows_enabled = true`), a faint directional sky
-fill (5 lux), and a low ambient (0.3) so the Sun's inverse-square falloff creates a visible
-brightness gradient from Mercury out to Neptune. Body visual radii are set to ~15× their
-physical size so they are visible at solar-system scale without being artificially huge.
+`AU_TO_SCENE_UNITS = 250.0` is the fixed scale constant in `types.rs`.
+`render.rs:apply_lighting_preset` runs every frame and is the source of truth for lighting
+— the values spawned in `setup.rs:setup_scene` are immediately overwritten by it. Planet
+shading is driven by a **DirectionalLight** (`sky_fill`, 1800 lux, `shadows_enabled = true`)
+so every body receives equal sunlight regardless of its distance from the Sun. Each frame
+its direction is re-aimed from the Sun toward the camera's focus target, keeping the lit
+hemisphere of the inspected body facing the viewer. The solar **PointLight** (`solar_key`)
+is dimmed to 80 MW with shadows disabled — it only adds inner-system specular highlights and
+bloom near the Sun. A low ambient (0.25) lifts the night side.
+
+The `MainCamera` carries post-processing that shapes the final image: `AutoExposure` (range
+widened past the default so outer planets aren't crushed to black), `Bloom`, and SSAO (fed
+by depth/normal prepasses). Body visual radii are ~15× their physical size so they read at
+solar-system scale without being artificially huge.
 
 ### Asset resolution order
 
@@ -163,9 +172,11 @@ At runtime `util::resolve_assets_root` checks in order:
 
 Textures and SPICE kernels are never bundled in the repo — download them with the scripts. Missing textures degrade gracefully to the body's fallback color.
 
-### Custom atmosphere shader
+### Custom shaders
 
 `PlanetAtmosphereMaterial` (`materials.rs`) uses `assets/shaders/planet_atmosphere.wgsl`. It is rendered front-face-culled with additive blending and no depth write, creating a limb-glow halo. The `params` uniform encodes `(density, rim_power, forward_phase_power, brightness)`.
+
+`PlanetRingMaterial` (`materials.rs`) uses `assets/shaders/planet_ring.wgsl` for Saturn's rings. Its `planet_position` uniform is refreshed every frame by `simulation.rs:sync_ring_material_uniforms` so the shader can cast the planet's cylindrical shadow (umbra) across the ring disc.
 
 ### CSPICE build wiring
 
