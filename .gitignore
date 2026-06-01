@@ -9,3 +9,6 @@
 .env
 .env.*
 dist-test/
+
+# Claude Code local harness state (scheduled task locks, agent worktrees)
+/.claude/
