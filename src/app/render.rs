@@ -1,6 +1,7 @@
 use super::types::{
-    AU_TO_SCENE_UNITS, AppStatus, AtmosphereLayer, BODIES, BodyRuntime, BodyTrails, LightingRig,
-    OrbitCameraState, PlanetRing, RenderSettings, SimulationState, StarsBackdrop, TRAIL_MAX_POINTS,
+    AU_TO_SCENE_UNITS, AppStatus, AtmosphereLayer, BODIES, BodyRuntime, BodyTrails, CameraMode,
+    LightingRig, OrbitCameraState, PlanetRing, RenderSettings, SimulationState, StarsBackdrop,
+    TRAIL_MAX_POINTS,
 };
 use super::util::format_simulation_speed;
 use bevy::prelude::*;
@@ -30,9 +31,15 @@ pub(super) fn apply_lighting_preset(
     // Each frame the light direction is updated to point from the Sun
     // toward whatever the camera is focused on, keeping the lit
     // hemisphere of the inspected body correctly oriented.
-    let target = orbit_camera.target;
-    let sun_dir = if target.length_squared() > 1e-4 {
-        target.normalize()
+    // Aim the sun toward whatever the viewer is focused on: the orbit target,
+    // or the free camera's own position (so the camera-facing hemisphere of
+    // nearby bodies stays lit while flying around).
+    let focus = match orbit_camera.mode {
+        CameraMode::Orbit => orbit_camera.target,
+        CameraMode::Free => orbit_camera.free_position,
+    };
+    let sun_dir = if focus.length_squared() > 1e-4 {
+        focus.normalize()
     } else {
         Vec3::new(1.0, -0.05, 0.0).normalize()
     };
@@ -188,6 +195,7 @@ pub(super) fn draw_orbit_paths(
 pub(super) fn update_window_title(
     app_status: Res<AppStatus>,
     simulation_state: Res<SimulationState>,
+    orbit_camera: Res<OrbitCameraState>,
     mut windows: Query<&mut Window, With<PrimaryWindow>>,
 ) {
     let Ok(mut window) = windows.single_mut() else {
@@ -200,13 +208,18 @@ pub(super) fn update_window_title(
         "Fallback"
     };
 
+    let camera_label = match orbit_camera.mode {
+        CameraMode::Orbit => "",
+        CameraMode::Free => " | Free cam",
+    };
+
     let selection_label = simulation_state
         .selected_body_index
         .map(|idx| format!(" | Selected: {}", BODIES[idx].display_name))
         .unwrap_or_default();
 
     window.title = format!(
-        "Solar Navigator [{mode}] | Speed: {}{selection_label}",
+        "Solar Navigator [{mode}] | Speed: {}{camera_label}{selection_label}",
         format_simulation_speed(simulation_state.simulation_rate),
     );
 }

@@ -19,6 +19,15 @@ pub(super) const SIDE_PANEL_WIDTH_PX: f32 = 300.0;
 pub(super) const STARFIELD_COUNT: usize = 900;
 pub(super) const STARFIELD_RADIUS: f32 = 30_000.0;
 
+// Free-camera tuning. Movement speed auto-scales with the distance to the
+// nearest body so the same controls work whether you're creeping up to a
+// surface or crossing interplanetary gaps.
+pub(super) const FREE_CAMERA_SPEED_FACTOR: f32 = 0.6; // fraction of nearest-body distance per second
+pub(super) const FREE_CAMERA_MIN_SPEED: f32 = 0.08; // scene units/s, so close-up never stalls
+pub(super) const FREE_CAMERA_MAX_SPEED: f32 = 6_000.0; // scene units/s ceiling on big hops
+pub(super) const FREE_CAMERA_BOOST_MULTIPLIER: f32 = 5.0; // hold Shift to boost
+pub(super) const FREE_CAMERA_LOOK_SENSITIVITY: f32 = 0.0026; // radians per pixel of mouse motion
+
 #[derive(Clone, Copy)]
 pub(super) struct RingSpec {
     pub(super) inner_radius: f32,
@@ -243,8 +252,18 @@ pub(super) struct LightingRig {
     pub(super) rim_fill: Entity,
 }
 
+/// Which camera scheme is currently driving the view. Orbit is the default
+/// inspection camera (tethered to a target); Free is an untethered fly-cam.
+#[derive(Resource, Clone, Copy, PartialEq, Eq, Default)]
+pub(super) enum CameraMode {
+    #[default]
+    Orbit,
+    Free,
+}
+
 #[derive(Resource)]
 pub(super) struct OrbitCameraState {
+    pub(super) mode: CameraMode,
     pub(super) yaw: f32,
     pub(super) pitch: f32,
     pub(super) distance: f32,
@@ -252,6 +271,11 @@ pub(super) struct OrbitCameraState {
     pub(super) max_distance: f32,
     pub(super) target: Vec3,
     pub(super) flight: Option<CameraFlight>,
+    // Free-camera state: world-space position and look angles. Seeded from the
+    // orbit camera on entering Free mode so the handoff is seamless.
+    pub(super) free_position: Vec3,
+    pub(super) free_yaw: f32,
+    pub(super) free_pitch: f32,
 }
 
 #[derive(Clone, Copy)]

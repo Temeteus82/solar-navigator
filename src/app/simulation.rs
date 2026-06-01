@@ -1,7 +1,7 @@
 use super::materials::PlanetRingMaterial;
 use super::types::{
     AU_TO_SCENE_UNITS, AtmosphereLayer, AtmosphereOf, BODIES, BodyEntity, BodyRuntime, BodyTrails,
-    EphemerisResource, HorizonsSyncState, KM_PER_AU, MAX_SIMULATION_RATE_MULTIPLIER,
+    CameraMode, EphemerisResource, HorizonsSyncState, KM_PER_AU, MAX_SIMULATION_RATE_MULTIPLIER,
     MIN_SIMULATION_RATE_MULTIPLIER, OrbitCameraState, PlanetRing, RingOf, SECONDS_PER_DAY,
     SimulationState,
 };
@@ -42,6 +42,7 @@ pub(super) fn keyboard_controls(
         simulation_state.elapsed_simulation_days = 0.0;
         simulation_state.selected_body_index = None;
         simulation_state.jump_request = None;
+        orbit_camera.mode = CameraMode::Orbit;
         orbit_camera.flight = None;
         orbit_camera.target = Vec3::ZERO;
         orbit_camera.distance = 188.3;
