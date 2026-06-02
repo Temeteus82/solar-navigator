@@ -33,6 +33,14 @@ bevy = { version = "0.18.1", default-features = false, features = [
     "custom_cursor",
     "hdr",
     "jpeg",
+    # GPU-compressed texture support: load KTX2 or DDS containers holding
+    # block-compressed (BC7/BC1) mipmapped textures. `zstd_rust` is the
+    # pure-Rust zstd backend (required by `ktx2`) so the portable build gains
+    # no native dependency. Both loaders read raw BCn (no Basis transcoder).
+    # Encode the compressed files with scripts/compress_textures.*.
+    "ktx2",
+    "zstd_rust",
+    "dds",
     "multi_threaded",
     "png",
     "std",
