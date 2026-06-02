@@ -21,6 +21,14 @@ cargo run --release --no-default-features
 cargo run --release
 ```
 
+### Platform support
+
+Windows (x86_64), Linux (x86_64), and **macOS on Apple Silicon (aarch64) only**.
+Intel/x86_64 macOS is intentionally unsupported — `src/main.rs` has a
+`compile_error!` guard that fails the build on that target (Apple no longer
+ships Intel Macs, CSPICE is vendored for arm64, and the GPU texture path assumes
+Apple Silicon's Metal feature set).
+
 ### Quality checks (run both feature flag variants before committing)
 
 ```bash
@@ -186,7 +194,7 @@ At runtime `util::resolve_assets_root` checks in order:
 
 Textures and SPICE kernels are never bundled in the repo — download them with the scripts. Missing textures degrade gracefully to the body's fallback color.
 
-Body surface textures are loaded through `util::resolve_texture_load_path`, which prefers a same-stem GPU-compressed container (`.ktx2` → `.dds` → the configured `.jpg`/`.png`) when present. `scripts/compress_textures.*` encode the downloaded maps into BC7+mipmapped KTX2 via AMD Compressonator; both the `ktx2` and `dds` Bevy loaders read raw BCn (no Basis transcoder), so the `zstd_rust` backend keeps the portable build free of native deps. The 8K Milky Way backdrop stays uncompressed because its pixels are read CPU-side to build the environment cubemap.
+Body surface textures are loaded through `util::resolve_texture_load_path`, which prefers a same-stem GPU-compressed container (`.ktx2` → `.dds` → the configured `.jpg`/`.png`) when present. `scripts/compress_textures.*` encode the downloaded maps into BC7+mipmapped KTX2 via AMD Compressonator; both the `ktx2` and `dds` Bevy loaders read raw BCn (no Basis transcoder), so the `zstd_rust` backend keeps the portable build free of native deps. The 8K Milky Way backdrop stays uncompressed because its pixels are read CPU-side to build the environment cubemap. **BC7 is unsupported on Apple Silicon GPUs**, so the compression scripts skip macOS entirely (the app loads the JPEGs there); a future ASTC/Basis path would be needed to compress textures on Apple Silicon.
 
 ### Custom shaders
 

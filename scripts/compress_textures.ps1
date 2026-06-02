@@ -29,6 +29,16 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# macOS is supported on Apple Silicon only, and Apple Silicon GPUs (Metal)
+# cannot load BC7/BCn textures. Skip compression there — the app falls back to
+# the .jpg textures automatically. ($IsMacOS only exists in PowerShell 7+;
+# Windows PowerShell 5.1 leaves it undefined, so guard the lookup.)
+if ((Test-Path variable:IsMacOS) -and $IsMacOS) {
+    Write-Host 'Skipping BC7 compression on macOS: Apple Silicon GPUs do not support BC7.'
+    Write-Host 'The app loads the .jpg textures directly on macOS.'
+    exit 0
+}
+
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectRoot = Resolve-Path (Join-Path $scriptDir '..')
 $textureDir = Join-Path $projectRoot 'assets/textures'

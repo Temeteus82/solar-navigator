@@ -93,6 +93,11 @@ no native dependency. If you would rather produce `.dds` with Microsoft's
 `texconv` (`-f BC7_UNORM_SRGB -m 0`), that works too — the loader accepts either
 container.
 
+**macOS / Apple Silicon:** the compression scripts deliberately skip macOS —
+Apple Silicon GPUs (Metal) cannot load BC7/BCn textures, so the app uses the
+`.jpg` maps directly there. (Compressing for Apple Silicon would require an
+ASTC or Basis Universal pipeline instead.)
+
 ## Attribution
 
 Current texture downloads in this project are sourced from Solar System Scope:
