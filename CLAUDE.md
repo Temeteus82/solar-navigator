@@ -196,6 +196,8 @@ Textures and SPICE kernels are never bundled in the repo — download them with 
 
 Body surface textures are loaded through `util::resolve_texture_load_path`, which prefers a same-stem GPU-compressed container (`.ktx2` → `.dds` → the configured `.jpg`/`.png`) when present. `scripts/compress_textures.*` encode the downloaded maps into BC7+mipmapped KTX2 via AMD Compressonator; both the `ktx2` and `dds` Bevy loaders read raw BCn (no Basis transcoder), so the `zstd_rust` backend keeps the portable build free of native deps. The 8K Milky Way backdrop stays uncompressed because its pixels are read CPU-side to build the environment cubemap. The block format is chosen per platform by `compress_textures.*`: **BC7 on Windows/Linux desktop GPUs, ASTC 4×4 on Apple Silicon** (Metal supports ASTC, not BC7). Because textures are generated locally per machine and never committed, each platform only ever holds its own format and the format-blind loader needs no platform logic. A single cross-platform asset set would instead need Basis Universal (UASTC), which the project avoids for its C++ build dependency.
 
+To verify the compressed textures actually upload as block-compressed + mipmapped on the GPU, and to profile the render pipeline, see `docs/gpu-profiling.md` (RenderDoc, AMD RGP/RMV, NVIDIA Nsight, Xcode on macOS, and how to force a capturable `WGPU_BACKEND`).
+
 ### Custom shaders
 
 `PlanetAtmosphereMaterial` (`materials.rs`) uses `assets/shaders/planet_atmosphere.wgsl`. It is rendered front-face-culled with additive blending and no depth write, creating a limb-glow halo. The `params` uniform encodes `(density, rim_power, forward_phase_power, brightness)`.
