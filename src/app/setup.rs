@@ -7,7 +7,7 @@ use super::types::{
 };
 use super::util::{
     color_from_rgba, eclipj2000_to_scene, equirectangular_to_cubemap_image, linear_from_rgb,
-    ring_mesh, spawn_fallback_starfield, sphere_mesh, white_pixel_image,
+    resolve_texture_load_path, ring_mesh, spawn_fallback_starfield, sphere_mesh, white_pixel_image,
 };
 use crate::ephemeris::{
     fetch_horizons_heliocentric_position_au_with_client, horizons_command_for_target,
@@ -138,23 +138,25 @@ pub(super) fn setup_scene(
     for (index, spec) in BODIES.iter().enumerate() {
         let sphere_handle = sphere_mesh(&mut meshes, spec.visual_radius, spec.mesh_subdivisions);
 
-        let texture_path = texture_dir.join(spec.texture_file);
-        let texture_handle = texture_path.is_file().then(|| {
-            let relative_path = format!("textures/{}", spec.texture_file);
-            let handle = asset_server.load(relative_path.clone());
-            texture_registry.entries.push(PlanetTextureEntry {
-                body_name: spec.display_name,
-                path: relative_path,
-                handle: handle.clone(),
+        // Prefer a generated GPU-compressed variant (.ktx2/.dds) when present,
+        // otherwise fall back to the plain downloaded image.
+        let texture_handle =
+            resolve_texture_load_path(&texture_dir, spec.texture_file).map(|relative_path| {
+                let handle = asset_server.load(relative_path.clone());
+                texture_registry.entries.push(PlanetTextureEntry {
+                    body_name: spec.display_name,
+                    path: relative_path,
+                    handle: handle.clone(),
+                });
+                handle
             });
-            handle
-        });
 
         if texture_handle.is_none() {
             eprintln!(
-                "Texture file missing for {} at {}",
+                "Texture file missing for {}: no {} (or .ktx2/.dds) in {}",
                 spec.display_name,
-                texture_path.display()
+                spec.texture_file,
+                texture_dir.display()
             );
         }
 
