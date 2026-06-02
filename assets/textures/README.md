@@ -82,21 +82,25 @@ KTX2 (BC7 + mipmaps). The app automatically prefers a same-stem `.ktx2` (or
 ```
 
 This requires [AMD Compressonator](https://gpuopen.com/compressonator/) on PATH.
-BC7 keeps textures block-compressed in VRAM (~4x smaller than the RGBA8 the
-JPEGs decode to) and the embedded mip chain removes shimmer on small/distant
-bodies. The 8K Milky Way backdrop is deliberately left as JPEG — its pixels are
-read on the CPU to build the environment cubemap, which a compressed image can't
-provide.
+The script picks the GPU format your platform supports — **BC7 on Windows/Linux,
+ASTC 4x4 on macOS / Apple Silicon** (Metal supports ASTC, not BC7). Either keeps
+textures block-compressed in VRAM (~4x smaller than the RGBA8 the JPEGs decode
+to) and the embedded mip chain removes shimmer on small/distant bodies. The 8K
+Milky Way backdrop is deliberately left as JPEG — its pixels are read on the CPU
+to build the environment cubemap, which a compressed image can't provide.
 
 Both loaders read raw BCn with no Basis transcoder, so the portable build gains
 no native dependency. If you would rather produce `.dds` with Microsoft's
 `texconv` (`-f BC7_UNORM_SRGB -m 0`), that works too — the loader accepts either
 container.
 
-**macOS / Apple Silicon:** the compression scripts deliberately skip macOS —
-Apple Silicon GPUs (Metal) cannot load BC7/BCn textures, so the app uses the
-`.jpg` maps directly there. (Compressing for Apple Silicon would require an
-ASTC or Basis Universal pipeline instead.)
+**macOS / Apple Silicon:** the scripts encode **ASTC** there instead of BC7,
+since Metal supports ASTC but not the desktop BC formats. ASTC files load only
+on Apple Silicon (and mobile), and BC7 only on desktop, so each platform keeps
+its own `.ktx2` set — fine here because textures are generated locally per
+machine, never shared or committed. A single asset that works everywhere would
+need Basis Universal (UASTC) transcoding, which this project avoids for its C++
+build dependency.
 
 ## Attribution
 
