@@ -110,6 +110,16 @@ cargo test --all-targets --no-default-features
 
 ---
 
+## GPU Profiling & Debugging
+
+For inspecting the render pipeline (e.g. verifying the BC7/ASTC compressed
+textures upload with mipmaps) and profiling GPU cost, see
+[`docs/gpu-profiling.md`](docs/gpu-profiling.md). It covers RenderDoc, AMD
+RGP/RMV, NVIDIA Nsight, and Xcode (macOS), plus how to force a capturable wgpu
+backend.
+
+---
+
 ## Asset Resolution
 
 At runtime, assets are resolved in this order:
