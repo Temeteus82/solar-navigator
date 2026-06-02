@@ -22,6 +22,15 @@
 
 set -euo pipefail
 
+# macOS is supported on Apple Silicon only, and Apple Silicon GPUs (Metal)
+# cannot load BC7/BCn textures. Skip compression there — the app falls back to
+# the .jpg textures automatically, so this is the correct, working behaviour.
+if [ "$(uname -s)" = "Darwin" ]; then
+    echo "Skipping BC7 compression on macOS: Apple Silicon GPUs do not support BC7."
+    echo "The app loads the .jpg textures directly on macOS."
+    exit 0
+fi
+
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 texture_dir="$script_dir/../assets/textures"
 
