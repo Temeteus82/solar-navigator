@@ -411,6 +411,30 @@ pub(super) fn random01(seed: &mut u64) -> f32 {
     ((*seed >> 32) as u32) as f32 / u32::MAX as f32
 }
 
+/// Pick the best on-disk variant for a configured texture filename, preferring
+/// a same-stem GPU-compressed container (block-compressed + mipmapped) over the
+/// original image. Order: `.ktx2` → `.dds` → the configured file. Returns the
+/// asset-relative path to load (e.g. `"textures/earth.ktx2"`), or `None` if no
+/// variant is present on disk.
+///
+/// This lets the renderer transparently use compressed textures when they have
+/// been generated (see `scripts/compress_textures.*`) while still working with
+/// the plain `.jpg`/`.png` downloads when they have not.
+pub(super) fn resolve_texture_load_path(texture_dir: &Path, file: &str) -> Option<String> {
+    if let Some(stem) = Path::new(file).file_stem().and_then(|s| s.to_str()) {
+        for ext in ["ktx2", "dds"] {
+            let candidate = format!("{stem}.{ext}");
+            if texture_dir.join(&candidate).is_file() {
+                return Some(format!("textures/{candidate}"));
+            }
+        }
+    }
+    if texture_dir.join(file).is_file() {
+        return Some(format!("textures/{file}"));
+    }
+    None
+}
+
 /// Convert a heliocentric position from the ECLIPJ2000 frame (SPICE convention,
 /// Z = ecliptic north, right-handed) to Bevy scene space (Y-up, right-handed).
 ///
@@ -424,6 +448,7 @@ pub(super) fn eclipj2000_to_scene(au: [f64; 3], scale: f64) -> DVec3 {
 mod tests {
     use super::{
         assets_root_from_executable, equirectangular_to_cubemap_image, format_simulation_speed,
+        resolve_texture_load_path,
     };
     use bevy::asset::RenderAssetUsages;
     use bevy::image::Image;
@@ -496,6 +521,43 @@ mod tests {
         assert_eq!(resolved, Some(assets_dir));
 
         let _ = fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn resolve_texture_load_path_prefers_compressed_variants() {
+        let root = unique_temp_path("texture-resolve");
+        fs::create_dir_all(&root).expect("create temp texture dir");
+
+        // Only the original present → use it.
+        fs::write(root.join("earth.jpg"), b"jpg").unwrap();
+        assert_eq!(
+            resolve_texture_load_path(&root, "earth.jpg"),
+            Some("textures/earth.jpg".to_string())
+        );
+
+        // A .dds is preferred over the plain image.
+        fs::write(root.join("earth.dds"), b"dds").unwrap();
+        assert_eq!(
+            resolve_texture_load_path(&root, "earth.jpg"),
+            Some("textures/earth.dds".to_string())
+        );
+
+        // A .ktx2 is preferred over everything else.
+        fs::write(root.join("earth.ktx2"), b"ktx2").unwrap();
+        assert_eq!(
+            resolve_texture_load_path(&root, "earth.jpg"),
+            Some("textures/earth.ktx2".to_string())
+        );
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn resolve_texture_load_path_returns_none_when_absent() {
+        let root = unique_temp_path("texture-missing");
+        fs::create_dir_all(&root).expect("create temp texture dir");
+        assert_eq!(resolve_texture_load_path(&root, "venus.jpg"), None);
+        let _ = fs::remove_dir_all(&root);
     }
 
     fn unique_temp_path(prefix: &str) -> PathBuf {
