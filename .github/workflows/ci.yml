@@ -233,6 +233,12 @@ jobs:
     container:
       image: ${{ matrix.image }}
 
+    # These distro containers install Rust via rustup but not sccache, so the
+    # `rustc-wrapper = "sccache"` from .cargo/config.toml would fail to spawn.
+    # Empty RUSTC_WRAPPER overrides the config and disables the wrapper here.
+    env:
+      RUSTC_WRAPPER: ""
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
