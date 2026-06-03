@@ -24,6 +24,8 @@ use bevy::tasks::{AsyncComputeTaskPool, futures_lite::future};
 use chrono::Utc;
 
 static ICON_PNG_SMALL: &[u8] = include_bytes!("../../assets/icon/AppIcon.iconset/icon_32x32.png");
+// Only consumed by the Windows-specific taskbar icon path in `set_window_icon`.
+#[cfg(target_os = "windows")]
 static ICON_PNG_LARGE: &[u8] = include_bytes!("../../assets/icon/AppIcon.iconset/icon_256x256.png");
 
 const HORIZONS_RETRY_BASE_DELAY_SECS: f64 = 1.0;

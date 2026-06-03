@@ -29,7 +29,7 @@ src/
 ## Coding Rules
 - Everything inside `app/` is `pub(super)` — no public API leaks out.
 - Types/resources → `types.rs`. Systems → the module that logically owns them.
-- `BODIES` in `types.rs` is the single source of truth for all 14 rendered bodies.
+- `BODIES` in `types.rs` is the single source of truth for all 18 rendered bodies.
 - Both Cargo feature variants must compile and lint cleanly at all times:
   - Default (SPICE): `cargo check --all-targets`
   - Portable: `cargo check --all-targets --no-default-features`
