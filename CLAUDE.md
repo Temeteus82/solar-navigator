@@ -135,7 +135,7 @@ The `spice` Cargo feature (on by default) gates all CSPICE integration with `#[c
 
 ### BODIES array and BodySpec
 
-`types.rs:BODIES` is the canonical static array of all 14 rendered solar-system bodies. Every body's display name, SPICE target string, visual radius, texture filename, PBR parameters, spin rate, and atmosphere config live here. Body index is the stable identifier used everywhere (queries, positions vec, camera targeting).
+`types.rs:BODIES` is the canonical static array of all 18 rendered solar-system bodies. Every body's display name, SPICE target string, visual radius, texture filename, PBR parameters, spin rate, and atmosphere config live here. Body index is the stable identifier used everywhere (queries, positions vec, camera targeting).
 
 ### Coordinate remapping
 

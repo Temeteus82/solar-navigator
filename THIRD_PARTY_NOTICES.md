@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-Last updated: 2026-04-19
+Last updated: 2026-06-03
 
 This file documents third-party code, data, and assets used by this project.
 It is not legal advice.
@@ -11,16 +11,7 @@ The project source code in this repository is licensed under the MIT License
 (see `LICENSE`), except where a different license is noted for bundled
 third-party components.
 
-## 2. Bundled Third-Party Source Code
-
-### `vendor/kiss3d`
-
-- Upstream: <https://github.com/dimforge/kiss3d>
-- Local path: `vendor/kiss3d`
-- License: BSD 3-Clause
-- License text: `vendor/kiss3d/LICENSE`
-
-## 3. Rust Crate Dependencies
+## 2. Rust Crate Dependencies
 
 Application dependencies are resolved through Cargo (`Cargo.toml` and
 `Cargo.lock`) and may use different licenses (for example MIT, Apache-2.0,
@@ -28,7 +19,7 @@ BSD, ISC, etc.).
 
 When redistributing binaries, ensure dependency license obligations are met.
 
-## 4. External Toolkits and Data
+## 3. External Toolkits and Data
 
 ### CSPICE Toolkit (downloaded)
 
@@ -49,7 +40,7 @@ endpoints into `assets/spice` (for example `naif0012.tls`, `de440s.bsp`).
 These files are third-party data and are not covered by this repository's MIT
 license.
 
-## 5. External Texture Assets
+## 4. External Texture Assets
 
 Texture files under `assets/textures` may be downloaded from third-party
 sources by project scripts:
@@ -72,7 +63,7 @@ These assets are not covered by this repository's MIT license. Before
 redistribution, verify the current upstream terms and provide required
 attribution.
 
-## 6. Attribution Guidance
+## 5. Attribution Guidance
 
 For redistribution of binaries or asset packs, include attribution and source
 references for external assets. See `ASSET_ATTRIBUTION.md` for a ready-to-use

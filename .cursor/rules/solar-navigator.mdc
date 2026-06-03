@@ -38,7 +38,7 @@ src/
 ## Key Conventions
 - All `app/` types are `pub(super)` — nothing leaks out of the module.
 - Bevy resources are defined in `types.rs`; systems live in the module that owns them.
-- `BODIES` in `types.rs` is the canonical static array of all 14 rendered bodies.
+- `BODIES` in `types.rs` is the canonical static array of all 18 rendered bodies.
 - Both feature variants must compile and pass clippy/tests:
   - `cargo check --all-targets`
   - `cargo check --all-targets --no-default-features`
