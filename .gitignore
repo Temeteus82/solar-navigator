@@ -2,6 +2,11 @@
 /dist
 /vendor/cspice
 
+# Locally generated GPU-compressed textures (platform-specific block format:
+# BC7 on desktop, ASTC on Apple Silicon). Regenerate with scripts/compress_textures.*
+assets/textures/*.dds
+assets/textures/*.ktx2
+
 .DS_Store
 **/.DS_Store
 ._*
