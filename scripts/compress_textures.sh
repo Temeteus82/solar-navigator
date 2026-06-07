@@ -51,24 +51,42 @@ else
     fmt_label="BC7"
 fi
 
+# Pick the output container. KTX2 is preferred, but some Compressonator builds
+# (notably the prebuilt Linux CLI packages) ship without a KTX2 writer and only
+# emit DDS. Both containers carry raw BCn/ASTC + mips, and the loader
+# (util::resolve_texture_load_path) reads .ktx2 -> .dds -> .jpg, so DDS is an
+# equivalent fallback. Probe once against the first source instead of guessing.
+ext="ktx2"
+shopt -s nullglob
+probe_src=""
+for f in "$texture_dir"/*.jpg; do probe_src="$f"; break; done
+if [ -n "$probe_src" ]; then
+    probe_out="$(mktemp -u).ktx2"
+    if ! compressonatorcli "${dest_args[@]}" -miplevels 1 "$probe_src" "$probe_out" >/dev/null 2>&1 \
+        || [ ! -f "$probe_out" ]; then
+        ext="dds"
+        echo "compressonatorcli cannot write .ktx2 on this build; falling back to .dds"
+    fi
+    rm -f "$probe_out"
+fi
+
 # Textures that must NOT be compressed: the CPU-read backdrop and the unused
 # lower-resolution sun backup.
 skip="milky_way_8k.jpg sun_2k_backup.jpg"
 
-shopt -s nullglob
 for src in "$texture_dir"/*.jpg; do
     name="$(basename "$src")"
     case " $skip " in
         *" $name "*) continue ;;
     esac
-    out="$texture_dir/${name%.jpg}.ktx2"
+    out="$texture_dir/${name%.jpg}.$ext"
     if [ -f "$out" ] && [ "$force" -ne 1 ]; then
-        echo "Skipping ${name%.jpg}.ktx2 (already present, use --force to re-encode)"
+        echo "Skipping ${name%.jpg}.$ext (already present, use --force to re-encode)"
         continue
     fi
-    echo "Encoding $name -> ${name%.jpg}.ktx2 ($fmt_label + mipmaps)..."
+    echo "Encoding $name -> ${name%.jpg}.$ext ($fmt_label + mipmaps)..."
     compressonatorcli "${dest_args[@]}" -miplevels 20 "$src" "$out" >/dev/null
 done
 
-echo "Compressed ($fmt_label) textures written to $texture_dir"
-echo "The app automatically prefers the .ktx2 files over the .jpg originals."
+echo "Compressed ($fmt_label, .$ext) textures written to $texture_dir"
+echo "The app automatically prefers the compressed files over the .jpg originals."
