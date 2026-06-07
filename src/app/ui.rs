@@ -63,191 +63,28 @@ pub(super) fn draw_side_panel(
         .frame(panel_frame)
         .show(ctx, |ui| {
             ui.heading("Solar Navigator");
-            ui.label(format!("Mode: {mode_text}"));
-            ui.small(&app_status.status_line);
-            ui.small(&horizons_sync.status_line);
-            let retry_in_progress = horizons_sync.task.is_some();
-            if ui
-                .add_enabled(!retry_in_progress, egui::Button::new("Retry Horizons Sync"))
-                .clicked()
-            {
-                horizons_sync.retry_requested = true;
-                horizons_sync.retry_attempt = 0;
-                horizons_sync.next_retry_deadline_seconds = None;
-                horizons_sync.status_line = "Horizons sync retry requested".to_string();
-            }
-            if retry_in_progress {
-                ui.small("Horizons sync request in progress...");
-            } else if let Some(deadline) = horizons_sync.next_retry_deadline_seconds {
-                let remaining = (deadline - time.elapsed_secs_f64()).max(0.0);
-                ui.small(format!("Automatic retry in {remaining:.1}s"));
-            }
-            for failure in horizons_sync.failures.iter().take(3) {
-                ui.small(format!("Horizons sync issue: {failure}"));
-            }
-            if horizons_sync.failures.len() > 3 {
-                ui.small(format!(
-                    "Horizons sync issue: ... and {} more",
-                    horizons_sync.failures.len() - 3
-                ));
-            }
-            ui.small(&texture_status.summary);
-            for failure in &texture_status.failed {
-                ui.small(format!("Texture load failed: {failure}"));
-            }
+            ui.small(format!("Mode: {mode_text}"));
+            ui.add_space(4.0);
 
-            ui.separator();
+            // Primary navigation: the search field stays pinned above the body
+            // list it filters so query and results share one eye-span.
             ui.label("Search target:");
             ui.horizontal(|ui| {
-                ui.text_edit_singleline(&mut simulation_state.target_filter);
+                ui.add(
+                    egui::TextEdit::singleline(&mut simulation_state.target_filter)
+                        .hint_text("Filter bodies…")
+                        .desired_width(f32::INFINITY),
+                );
                 if ui.button("Clear").clicked() {
                     simulation_state.target_filter.clear();
                 }
             });
+            ui.add_space(2.0);
 
-            let paused_text = if simulation_state.paused {
-                "paused"
-            } else {
-                "running"
-            };
-            let elapsed_days = simulation_state.elapsed_simulation_days;
-            let current_utc = simulation_epoch.start_utc
-                + ChronoDuration::milliseconds((elapsed_days * 86_400_000.0) as i64);
-            ui.label(format!(
-                "Date: {}",
-                current_utc.format("%Y-%m-%d %H:%M:%S UTC")
-            ));
-            ui.small(format!("Elapsed: {elapsed_days:+.3} days from launch"));
-            ui.label(format!(
-                "Sim: {paused_text} | Speed: {}",
-                format_simulation_speed(simulation_state.simulation_rate)
-            ));
-            ui.small(format!(
-                "Days/s equivalent: {:.7}",
-                simulation_state.simulation_rate / SECONDS_PER_DAY
-            ));
-            ui.label(format!("Camera distance: {:.2}", orbit_camera.distance));
-            ui.add(
-                egui::Slider::new(
-                    &mut simulation_state.simulation_rate,
-                    MIN_SIMULATION_RATE_MULTIPLIER..=MAX_SIMULATION_RATE_MULTIPLIER,
-                )
-                .logarithmic(true)
-                .text("x realtime"),
-            );
-
-            ui.separator();
-            ui.label("Jump to date:");
-            let max_day =
-                days_in_month(simulation_state.picker_year, simulation_state.picker_month);
-            simulation_state.picker_day = simulation_state.picker_day.clamp(1, max_day);
-            ui.horizontal(|ui| {
-                ui.add(
-                    egui::DragValue::new(&mut simulation_state.picker_year)
-                        .range(1600..=2200)
-                        .prefix("Y "),
-                );
-                ui.add(
-                    egui::DragValue::new(&mut simulation_state.picker_month)
-                        .range(1..=12)
-                        .prefix("M "),
-                );
-                ui.add(
-                    egui::DragValue::new(&mut simulation_state.picker_day)
-                        .range(1..=max_day)
-                        .prefix("D "),
-                );
-            });
-            if ui.button("Go to Date").clicked()
-                && let Some(date) = NaiveDate::from_ymd_opt(
-                    simulation_state.picker_year,
-                    simulation_state.picker_month,
-                    simulation_state.picker_day,
-                )
-            {
-                let target = date.and_hms_opt(0, 0, 0).unwrap().and_utc();
-                let diff = target.signed_duration_since(simulation_epoch.start_utc);
-                simulation_state.elapsed_simulation_days = diff.num_seconds() as f64 / 86_400.0;
-                trails.clear();
-            }
-
-            ui.separator();
-            ui.small(format!(
-                "Distance scale: 1 AU = {AU_TO_SCENE_UNITS:.1} units (realistic)"
-            ));
-
-            ui.checkbox(&mut render_settings.stars_enabled, "Starfield backdrop");
-            ui.checkbox(&mut render_settings.atmosphere_enabled, "Atmosphere halos");
-            ui.checkbox(&mut render_settings.trails_enabled, "Orbital trails");
-            ui.checkbox(&mut render_settings.rings_enabled, "Planetary rings");
-            ui.checkbox(&mut render_settings.orbits_enabled, "Orbital paths");
-            ui.checkbox(&mut render_settings.asteroids_enabled, "Asteroid belt");
-
-            if let Some(selected_index) = simulation_state.selected_body_index
-                && let Some(spec) = BODIES.get(selected_index)
-            {
-                ui.separator();
-                ui.label(format!("Selected: {}", spec.display_name));
-                ui.small(format!(
-                    "Radius: {} km",
-                    format_large(spec.physical_radius_km)
-                ));
-                ui.small(format!("Mass: {:.3e} kg", spec.mass_kg));
-                if let Some(period_days) = spec.orbital_period_days {
-                    if period_days < 800.0 {
-                        ui.small(format!("Orbital period: {period_days:.2} days"));
-                    } else {
-                        ui.small(format!(
-                            "Orbital period: {:.2} years",
-                            period_days / 365.256
-                        ));
-                    }
-                }
-                if let Some(sma_au) = spec.semi_major_axis_au {
-                    ui.small(format!("Semi-major axis: {sma_au:.3} AU"));
-                }
-                if let Some(position) = body_runtime.positions.get(selected_index) {
-                    let distance_au = position.length() / AU_TO_SCENE_UNITS;
-                    let distance_km = distance_au * KM_PER_AU;
-                    ui.small(format!(
-                        "Distance from Sun: {distance_au:.3} AU ({:.3e} km)",
-                        distance_km
-                    ));
-                    // Light-travel time (one-way) from the Sun.
-                    let light_minutes = distance_au * 499.004784 / 60.0;
-                    ui.small(format!("Light from Sun: {light_minutes:.2} min"));
-                }
-            }
-
-            ui.separator();
-            let camera_mode_label = match orbit_camera.mode {
-                CameraMode::Orbit => "Orbit",
-                CameraMode::Free => "Free fly",
-            };
-            ui.label(format!("Camera: {camera_mode_label}"));
-            if ui.button("Toggle free camera (F)").clicked() {
-                toggle_camera_mode_impl(&mut orbit_camera, &mut simulation_state, &body_runtime);
-            }
-
-            ui.separator();
-            ui.label("Controls:");
-            if orbit_camera.mode == CameraMode::Free {
-                ui.label("- WASD: move, Q/E: down/up");
-                ui.label("- Drag: look around");
-                ui.label("- Shift: boost speed");
-                ui.label("- F: back to orbit camera");
-            } else {
-                ui.label("- Left or right drag: orbit");
-                ui.label("- Shift + left drag: pan");
-                ui.label("- Mouse wheel / trackpad scroll: zoom");
-                ui.label("- F: free camera");
-            }
-            ui.label("- Space: pause/unpause");
-            ui.label("- Up/Down: simulation speed");
-            ui.label("- Backspace: reset time/view");
-
-            ui.separator();
             let filter_lc = simulation_state.target_filter.trim().to_ascii_lowercase();
+
+            // Everything below scrolls together so no section is ever clipped on
+            // a short window, and the body list leads — it's the headline action.
             egui::ScrollArea::vertical()
                 .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
                 .show(ui, |ui| {
@@ -267,6 +104,222 @@ pub(super) fn draw_side_panel(
                             }
                         }
                     });
+
+                    ui.add_space(6.0);
+
+                    egui::CollapsingHeader::new("Time & simulation")
+                        .default_open(true)
+                        .show(ui, |ui| {
+                            let paused_text = if simulation_state.paused {
+                                "paused"
+                            } else {
+                                "running"
+                            };
+                            let elapsed_days = simulation_state.elapsed_simulation_days;
+                            let current_utc = simulation_epoch.start_utc
+                                + ChronoDuration::milliseconds(
+                                    (elapsed_days * 86_400_000.0) as i64,
+                                );
+                            ui.label(format!(
+                                "Date: {}",
+                                current_utc.format("%Y-%m-%d %H:%M:%S UTC")
+                            ));
+                            ui.small(format!("Elapsed: {elapsed_days:+.3} days from launch"));
+                            ui.label(format!(
+                                "Sim: {paused_text} | Speed: {}",
+                                format_simulation_speed(simulation_state.simulation_rate)
+                            ));
+                            ui.small(format!(
+                                "Days/s equivalent: {:.7}",
+                                simulation_state.simulation_rate / SECONDS_PER_DAY
+                            ));
+                            ui.add(
+                                egui::Slider::new(
+                                    &mut simulation_state.simulation_rate,
+                                    MIN_SIMULATION_RATE_MULTIPLIER..=MAX_SIMULATION_RATE_MULTIPLIER,
+                                )
+                                .logarithmic(true)
+                                .text("x realtime"),
+                            );
+
+                            ui.add_space(4.0);
+                            ui.label("Jump to date:");
+                            let max_day = days_in_month(
+                                simulation_state.picker_year,
+                                simulation_state.picker_month,
+                            );
+                            simulation_state.picker_day =
+                                simulation_state.picker_day.clamp(1, max_day);
+                            ui.horizontal(|ui| {
+                                ui.add(
+                                    egui::DragValue::new(&mut simulation_state.picker_year)
+                                        .range(1600..=2200)
+                                        .prefix("Y "),
+                                );
+                                ui.add(
+                                    egui::DragValue::new(&mut simulation_state.picker_month)
+                                        .range(1..=12)
+                                        .prefix("M "),
+                                );
+                                ui.add(
+                                    egui::DragValue::new(&mut simulation_state.picker_day)
+                                        .range(1..=max_day)
+                                        .prefix("D "),
+                                );
+                            });
+                            if ui.button("Go to Date").clicked()
+                                && let Some(date) = NaiveDate::from_ymd_opt(
+                                    simulation_state.picker_year,
+                                    simulation_state.picker_month,
+                                    simulation_state.picker_day,
+                                )
+                            {
+                                let target = date.and_hms_opt(0, 0, 0).unwrap().and_utc();
+                                let diff = target.signed_duration_since(simulation_epoch.start_utc);
+                                simulation_state.elapsed_simulation_days =
+                                    diff.num_seconds() as f64 / 86_400.0;
+                                trails.clear();
+                            }
+                        });
+
+                    egui::CollapsingHeader::new("Display")
+                        .default_open(true)
+                        .show(ui, |ui| {
+                            ui.small(format!(
+                                "Distance scale: 1 AU = {AU_TO_SCENE_UNITS:.1} units (realistic)"
+                            ));
+                            ui.checkbox(&mut render_settings.stars_enabled, "Starfield backdrop");
+                            ui.checkbox(
+                                &mut render_settings.atmosphere_enabled,
+                                "Atmosphere halos",
+                            );
+                            ui.checkbox(&mut render_settings.trails_enabled, "Orbital trails");
+                            ui.checkbox(&mut render_settings.rings_enabled, "Planetary rings");
+                            ui.checkbox(&mut render_settings.orbits_enabled, "Orbital paths");
+                            ui.checkbox(&mut render_settings.asteroids_enabled, "Asteroid belt");
+                        });
+
+                    // Always render this header so selecting/deselecting a body
+                    // swaps its contents in place instead of shifting the layout.
+                    egui::CollapsingHeader::new("Selected body")
+                        .default_open(true)
+                        .show(ui, |ui| {
+                            if let Some(selected_index) = simulation_state.selected_body_index
+                                && let Some(spec) = BODIES.get(selected_index)
+                            {
+                                ui.label(spec.display_name);
+                                ui.small(format!(
+                                    "Radius: {} km",
+                                    format_large(spec.physical_radius_km)
+                                ));
+                                ui.small(format!("Mass: {:.3e} kg", spec.mass_kg));
+                                if let Some(period_days) = spec.orbital_period_days {
+                                    if period_days < 800.0 {
+                                        ui.small(format!("Orbital period: {period_days:.2} days"));
+                                    } else {
+                                        ui.small(format!(
+                                            "Orbital period: {:.2} years",
+                                            period_days / 365.256
+                                        ));
+                                    }
+                                }
+                                if let Some(sma_au) = spec.semi_major_axis_au {
+                                    ui.small(format!("Semi-major axis: {sma_au:.3} AU"));
+                                }
+                                if let Some(position) = body_runtime.positions.get(selected_index) {
+                                    let distance_au = position.length() / AU_TO_SCENE_UNITS;
+                                    let distance_km = distance_au * KM_PER_AU;
+                                    ui.small(format!(
+                                        "Distance from Sun: {distance_au:.3} AU ({:.3e} km)",
+                                        distance_km
+                                    ));
+                                    // Light-travel time (one-way) from the Sun.
+                                    let light_minutes = distance_au * 499.004784 / 60.0;
+                                    ui.small(format!("Light from Sun: {light_minutes:.2} min"));
+                                }
+                            } else {
+                                ui.small("Click a body above to inspect it.");
+                            }
+                        });
+
+                    egui::CollapsingHeader::new("Camera & controls")
+                        .default_open(false)
+                        .show(ui, |ui| {
+                            let camera_mode_label = match orbit_camera.mode {
+                                CameraMode::Orbit => "Orbit",
+                                CameraMode::Free => "Free fly",
+                            };
+                            ui.label(format!("Camera: {camera_mode_label}"));
+                            ui.small(format!("Distance: {:.2}", orbit_camera.distance));
+                            if ui.button("Toggle free camera (F)").clicked() {
+                                toggle_camera_mode_impl(
+                                    &mut orbit_camera,
+                                    &mut simulation_state,
+                                    &body_runtime,
+                                );
+                            }
+
+                            ui.add_space(4.0);
+                            if orbit_camera.mode == CameraMode::Free {
+                                ui.label("- WASD: move, Q/E: down/up");
+                                ui.label("- Drag: look around");
+                                ui.label("- Shift: boost speed");
+                                ui.label("- F: back to orbit camera");
+                            } else {
+                                ui.label("- Left or right drag: orbit");
+                                ui.label("- Shift + left drag: pan");
+                                ui.label("- Mouse wheel / trackpad scroll: zoom");
+                                ui.label("- F: free camera");
+                            }
+                            ui.label("- Space: pause/unpause");
+                            ui.label("- Up/Down: simulation speed");
+                            ui.label("- Backspace: reset time/view");
+                        });
+
+                    // Diagnostics are demoted out of prime real estate, but the
+                    // section auto-expands when there's something wrong to see.
+                    let has_issues =
+                        !horizons_sync.failures.is_empty() || !texture_status.failed.is_empty();
+                    egui::CollapsingHeader::new("Status & diagnostics")
+                        .default_open(has_issues)
+                        .show(ui, |ui| {
+                            ui.small(&app_status.status_line);
+                            ui.small(&horizons_sync.status_line);
+                            let retry_in_progress = horizons_sync.task.is_some();
+                            if ui
+                                .add_enabled(
+                                    !retry_in_progress,
+                                    egui::Button::new("Retry Horizons Sync"),
+                                )
+                                .clicked()
+                            {
+                                horizons_sync.retry_requested = true;
+                                horizons_sync.retry_attempt = 0;
+                                horizons_sync.next_retry_deadline_seconds = None;
+                                horizons_sync.status_line =
+                                    "Horizons sync retry requested".to_string();
+                            }
+                            if retry_in_progress {
+                                ui.small("Horizons sync request in progress...");
+                            } else if let Some(deadline) = horizons_sync.next_retry_deadline_seconds
+                            {
+                                let remaining = (deadline - time.elapsed_secs_f64()).max(0.0);
+                                ui.small(format!("Automatic retry in {remaining:.1}s"));
+                            }
+                            for failure in horizons_sync.failures.iter().take(3) {
+                                ui.small(format!("Horizons sync issue: {failure}"));
+                            }
+                            if horizons_sync.failures.len() > 3 {
+                                ui.small(format!(
+                                    "Horizons sync issue: ... and {} more",
+                                    horizons_sync.failures.len() - 3
+                                ));
+                            }
+                            ui.small(&texture_status.summary);
+                            for failure in &texture_status.failed {
+                                ui.small(format!("Texture load failed: {failure}"));
+                            }
+                        });
                 });
         });
 
