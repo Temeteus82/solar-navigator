@@ -79,12 +79,21 @@ for src in "$texture_dir"/*.jpg; do
     case " $skip " in
         *" $name "*) continue ;;
     esac
-    out="$texture_dir/${name%.jpg}.$ext"
+    stem="${name%.jpg}"
+    out="$texture_dir/$stem.$ext"
+    # When we fall back to .dds, drop any stale same-stem .ktx2: the loader
+    # prefers .ktx2 -> .dds, so a leftover .ktx2 from an earlier (KTX2-capable)
+    # run would silently shadow the .dds we are writing now. Done before the
+    # skip check so it is cleared even on no-op re-runs.
+    if [ "$ext" = "dds" ] && [ -f "$texture_dir/$stem.ktx2" ]; then
+        echo "Removing stale $stem.ktx2 (superseded by $stem.dds)"
+        rm -f "$texture_dir/$stem.ktx2"
+    fi
     if [ -f "$out" ] && [ "$force" -ne 1 ]; then
-        echo "Skipping ${name%.jpg}.$ext (already present, use --force to re-encode)"
+        echo "Skipping $stem.$ext (already present, use --force to re-encode)"
         continue
     fi
-    echo "Encoding $name -> ${name%.jpg}.$ext ($fmt_label + mipmaps)..."
+    echo "Encoding $name -> $stem.$ext ($fmt_label + mipmaps)..."
     compressonatorcli "${dest_args[@]}" -miplevels 20 "$src" "$out" >/dev/null
 done
 
