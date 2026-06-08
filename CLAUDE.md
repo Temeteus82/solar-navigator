@@ -192,7 +192,18 @@ At runtime `util::resolve_assets_root` checks in order:
 3. macOS app bundle (`Contents/Resources/assets`)
 4. Compile-time source-tree fallback (`CARGO_MANIFEST_DIR/assets`)
 
-Textures and SPICE kernels are never bundled in the repo — download them with the scripts. Missing textures degrade gracefully to the body's fallback color.
+SPICE kernels are never bundled in the repo — download them with the scripts. Missing textures degrade gracefully to the body's fallback color.
+
+> **Note (corrects a long-standing inaccuracy in the line below and elsewhere):** the
+> planet/body **source `.jpg` textures _are_ committed** to the repo (tracked since the
+> initial commit). Only the locally generated GPU-compressed `.ktx2`/`.dds` files are
+> gitignored. So if the `assets/textures/*.jpg` maps go missing, restore them instantly
+> with `git restore assets/textures/` — no download needed.
+>
+> **The Solar System Scope download endpoint is currently 403-blocked** (verified
+> 2026-06: returns Forbidden even with a browser User-Agent), so
+> `download_textures_solar_system_scope.*` cannot re-fetch the planet maps right now.
+> Prefer `git restore` over re-downloading until that upstream access issue is resolved.
 
 Body surface textures are loaded through `util::resolve_texture_load_path`, which prefers a same-stem GPU-compressed container (`.ktx2` → `.dds` → the configured `.jpg`/`.png`) when present. `scripts/compress_textures.*` encode the downloaded maps into BC7+mipmapped KTX2 via AMD Compressonator; both the `ktx2` and `dds` Bevy loaders read raw BCn (no Basis transcoder), so the `zstd_rust` backend keeps the portable build free of native deps. The 8K Milky Way backdrop stays uncompressed because its pixels are read CPU-side to build the environment cubemap. The block format is chosen per platform by `compress_textures.*`: **BC7 on Windows/Linux desktop GPUs, ASTC 4×4 on Apple Silicon** (Metal supports ASTC, not BC7). Because textures are generated locally per machine and never committed, each platform only ever holds its own format and the format-blind loader needs no platform logic. A single cross-platform asset set would instead need Basis Universal (UASTC), which the project avoids for its C++ build dependency.
 
