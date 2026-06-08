@@ -1,9 +1,10 @@
 use super::materials::{PlanetAtmosphereMaterial, PlanetRingMaterial};
 use super::types::{
-    AppPaths, AppStatus, AtmosphereLayer, AtmosphereOf, BODIES, BodyEntity, EphemerisResource,
-    HorizonsHttpClient, HorizonsSyncResult, HorizonsSyncState, HorizonsSyncTaskInput,
-    HorizonsTargetSample, KM_PER_AU, LightingRig, MainCamera, PlanetRing, PlanetTextureEntry,
-    PlanetTextureRegistry, RingOf, StarsBackdrop, TextureStatus,
+    AppPaths, AppStatus, AtmosphereLayer, AtmosphereOf, BODIES, BodyEntity, CLOUD_LAYER_SCALE,
+    CloudLayer, CloudOf, EphemerisResource, HorizonsHttpClient, HorizonsSyncResult,
+    HorizonsSyncState, HorizonsSyncTaskInput, HorizonsTargetSample, KM_PER_AU, LightingRig,
+    MainCamera, PlanetRing, PlanetTextureEntry, PlanetTextureRegistry, RingOf, StarsBackdrop,
+    TextureStatus,
 };
 use super::util::{
     color_from_rgba, eclipj2000_to_scene, equirectangular_to_cubemap_image, linear_from_rgb,
@@ -226,6 +227,61 @@ pub(super) fn setup_scene(
                 AtmosphereOf { index },
                 NotShadowCaster,
             ));
+        }
+
+        if let Some(cloud_file) = spec.cloud_texture {
+            match resolve_texture_load_path(&texture_dir, cloud_file) {
+                Some(relative_path) => {
+                    let cloud_handle = asset_server.load(relative_path.clone());
+                    texture_registry.entries.push(PlanetTextureEntry {
+                        body_name: spec.display_name,
+                        path: relative_path,
+                        handle: cloud_handle.clone(),
+                    });
+
+                    let cloud_mesh = sphere_mesh(
+                        &mut meshes,
+                        spec.visual_radius * CLOUD_LAYER_SCALE,
+                        spec.mesh_subdivisions,
+                    );
+                    // Translucent, sun-lit cloud shell. The JPEG cloud map carries
+                    // no alpha channel, so a uniform base-colour alpha makes the whole
+                    // shell semi-transparent and lets the surface map show through.
+                    // Default back-face culling renders only the near hemisphere of
+                    // the shell — correct for a translucent layer over an opaque body.
+                    let cloud_material = materials.add(StandardMaterial {
+                        base_color: Color::srgba(1.0, 1.0, 1.0, 0.9),
+                        base_color_texture: Some(cloud_handle),
+                        metallic: 0.0,
+                        perceptual_roughness: 0.9,
+                        reflectance: 0.05,
+                        alpha_mode: AlphaMode::Blend,
+                        ..default()
+                    });
+
+                    commands.spawn((
+                        Mesh3d(cloud_mesh),
+                        MeshMaterial3d(cloud_material),
+                        // Same pole pre-rotation as the body; `sync_cloud_layers`
+                        // then spins it about local +Z at the super-rotation rate.
+                        Transform::from_rotation(Quat::from_rotation_arc(
+                            Vec3::Z,
+                            Vec3::from_array(spec.pole_direction).normalize(),
+                        )),
+                        CloudLayer,
+                        CloudOf { index },
+                        NotShadowCaster,
+                    ));
+                }
+                None => {
+                    eprintln!(
+                        "Cloud texture missing for {}: no {} in {}",
+                        spec.display_name,
+                        cloud_file,
+                        texture_dir.display()
+                    );
+                }
+            }
         }
 
         if let Some(ring) = spec.rings {

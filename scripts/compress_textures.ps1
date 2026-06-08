@@ -56,6 +56,31 @@ if ((Test-Path variable:IsMacOS) -and $IsMacOS) {
     $fmtLabel = 'BC7'
 }
 
+# BC7 and ASTC 4x4 both tile the image in 4x4 blocks, so the GPU rejects any
+# texture whose width or height is not a multiple of 4 (wgpu panics with
+# "Height N is not a multiple of Bc7RgbaUnormSrgb's block height (4)"). A few
+# source maps ship with odd dimensions (e.g. Vesta's 4096x2047), so round them
+# down to the nearest multiple of 4 at encode time via Compressonator's resize
+# flags. Returns the -width/-height args, or an empty array when the source is
+# already block-aligned or its dimensions can't be read (encode as-is then).
+function Get-BlockAlignArgs([string]$path) {
+    try {
+        Add-Type -AssemblyName System.Drawing -ErrorAction Stop
+        $img = [System.Drawing.Image]::FromFile($path)
+        try { $w = $img.Width; $h = $img.Height } finally { $img.Dispose() }
+    } catch {
+        Write-Warning "  Could not read dimensions of $(Split-Path $path -Leaf); encoding without 4x4 block-alignment resize."
+        return @()
+    }
+    $tw = $w - ($w % 4)
+    $th = $h - ($h % 4)
+    if ($tw -ne $w -or $th -ne $h) {
+        Write-Host "  $(Split-Path $path -Leaf) is ${w}x${h}; resizing to ${tw}x${th} for 4x4 block alignment"
+        return @('-width', $tw, '-height', $th)
+    }
+    return @()
+}
+
 # Textures that must NOT be compressed: the CPU-read backdrop and the unused
 # lower-resolution sun backup.
 $skip = @('milky_way_8k.jpg', 'sun_2k_backup.jpg')
@@ -69,8 +94,9 @@ foreach ($src in $sources) {
         Write-Host "Skipping $($src.BaseName).ktx2 (already present, use -Force to re-encode)"
         continue
     }
+    $alignArgs = Get-BlockAlignArgs $src.FullName
     Write-Host "Encoding $($src.Name) -> $($src.BaseName).ktx2 ($fmtLabel + mipmaps)..."
-    & $tool.Source @destArgs -miplevels 20 $src.FullName $out | Out-Null
+    & $tool.Source @destArgs @alignArgs -miplevels 20 $src.FullName $out | Out-Null
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Compressonator failed for $($src.Name) (exit $LASTEXITCODE)"
     }

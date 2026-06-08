@@ -1,9 +1,9 @@
 use super::materials::PlanetRingMaterial;
 use super::types::{
     AU_TO_SCENE_UNITS, AtmosphereLayer, AtmosphereOf, BODIES, BodyEntity, BodyRuntime, BodyTrails,
-    CameraMode, EphemerisResource, HorizonsSyncState, KM_PER_AU, MAX_SIMULATION_RATE_MULTIPLIER,
-    MIN_SIMULATION_RATE_MULTIPLIER, OrbitCameraState, PlanetRing, RingOf, SECONDS_PER_DAY,
-    SimulationState,
+    CLOUD_SUPERROTATION_RADIANS_PER_SECOND, CameraMode, CloudLayer, CloudOf, EphemerisResource,
+    HorizonsSyncState, KM_PER_AU, MAX_SIMULATION_RATE_MULTIPLIER, MIN_SIMULATION_RATE_MULTIPLIER,
+    OrbitCameraState, PlanetRing, RingOf, SECONDS_PER_DAY, SimulationState,
 };
 use super::util::eclipj2000_to_scene;
 use crate::ephemeris::{
@@ -217,6 +217,35 @@ pub(super) fn sync_atmosphere_positions(
     for (atmosphere, mut transform) in &mut atmosphere_query {
         if let Some(position) = body_runtime.positions.get(atmosphere.index) {
             transform.translation = position.as_vec3();
+        }
+    }
+}
+
+/// Keeps each cloud shell centred on its parent body and spins it about the
+/// body's pole at the super-rotation rate, so the clouds drift over the surface
+/// map. Mirrors `sync_atmosphere_positions` but adds the independent rotation.
+pub(super) fn sync_cloud_layers(
+    time: Res<Time>,
+    simulation_state: Res<SimulationState>,
+    body_runtime: Res<BodyRuntime>,
+    mut cloud_query: Query<(&CloudOf, &mut Transform), With<CloudLayer>>,
+) {
+    let frame_simulation_seconds = if simulation_state.paused {
+        0.0
+    } else {
+        time.delta_secs() * simulation_state.simulation_rate as f32
+    };
+    let spin_step = spin_step_radians(
+        CLOUD_SUPERROTATION_RADIANS_PER_SECOND,
+        frame_simulation_seconds,
+    );
+
+    for (cloud, mut transform) in &mut cloud_query {
+        if let Some(position) = body_runtime.positions.get(cloud.index) {
+            transform.translation = position.as_vec3();
+        }
+        if spin_step != 0.0 {
+            transform.rotate_local_z(spin_step);
         }
     }
 }
