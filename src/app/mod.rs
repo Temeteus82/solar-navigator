@@ -113,6 +113,7 @@ pub(crate) fn run() {
                 simulation::update_body_positions,
                 camera::track_selected_body,
                 simulation::sync_atmosphere_positions,
+                simulation::sync_cloud_layers,
                 simulation::sync_ring_positions,
                 simulation::sync_ring_material_uniforms,
                 camera::apply_camera_flight,
