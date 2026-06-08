@@ -70,6 +70,50 @@ if [ -n "$probe_src" ]; then
     rm -f "$probe_out"
 fi
 
+# BC7 and ASTC 4x4 both tile the image in 4x4 blocks, so the GPU rejects any
+# texture whose width or height is not a multiple of 4 (wgpu panics with
+# "Height N is not a multiple of Bc7RgbaUnormSrgb's block height (4)"). A few
+# source maps ship with odd dimensions (e.g. Vesta's 4096x2047), so round them
+# down to the nearest multiple of 4 at encode time. Dimensions are read via
+# sips (macOS, built-in) or ImageMagick's identify (Linux); if neither is
+# present we warn and encode as-is rather than risk a wrong resize.
+image_dims() {
+    local f="$1" out=""
+    if command -v sips >/dev/null 2>&1; then
+        out=$(sips -g pixelWidth -g pixelHeight "$f" 2>/dev/null \
+            | awk '/pixelWidth/{w=$2}/pixelHeight/{h=$2}END{if(w&&h)print w, h}') || true
+        if [ -n "$out" ]; then printf '%s' "$out"; return 0; fi
+    fi
+    if command -v magick >/dev/null 2>&1; then
+        out=$(magick identify -format '%w %h' "$f" 2>/dev/null) || true
+        if [ -n "$out" ]; then printf '%s' "$out"; return 0; fi
+    fi
+    if command -v identify >/dev/null 2>&1; then
+        out=$(identify -format '%w %h' "$f" 2>/dev/null) || true
+        if [ -n "$out" ]; then printf '%s' "$out"; return 0; fi
+    fi
+    return 1
+}
+
+# Echo the Compressonator -width/-height resize flags needed to make a source
+# 4x4-block aligned, or nothing if it already is / its size can't be read.
+block_align_args() {
+    local f="$1" dims w h tw th
+    dims=$(image_dims "$f") || true
+    if [ -z "${dims:-}" ]; then
+        echo "  Could not read dimensions of $(basename "$f"); encoding without 4x4 block-alignment resize." >&2
+        return 0
+    fi
+    w=${dims% *}
+    h=${dims#* }
+    tw=$(( w - w % 4 ))
+    th=$(( h - h % 4 ))
+    if [ "$tw" -ne "$w" ] || [ "$th" -ne "$h" ]; then
+        echo "  $(basename "$f") is ${w}x${h}; resizing to ${tw}x${th} for 4x4 block alignment" >&2
+        printf -- '-width %s -height %s' "$tw" "$th"
+    fi
+}
+
 # Textures that must NOT be compressed: the CPU-read backdrop and the unused
 # lower-resolution sun backup.
 skip="milky_way_8k.jpg sun_2k_backup.jpg"
@@ -93,8 +137,11 @@ for src in "$texture_dir"/*.jpg; do
         echo "Skipping $stem.$ext (already present, use --force to re-encode)"
         continue
     fi
+    align_args=$(block_align_args "$src")
     echo "Encoding $name -> $stem.$ext ($fmt_label + mipmaps)..."
-    compressonatorcli "${dest_args[@]}" -miplevels 20 "$src" "$out" >/dev/null
+    # align_args is intentionally unquoted so it word-splits into separate flags.
+    # shellcheck disable=SC2086
+    compressonatorcli "${dest_args[@]}" $align_args -miplevels 20 "$src" "$out" >/dev/null
 done
 
 echo "Compressed ($fmt_label, .$ext) textures written to $texture_dir"
