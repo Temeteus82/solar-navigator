@@ -42,6 +42,9 @@ pub(super) struct BodySpec {
     pub(super) visual_radius: f32,
     pub(super) color: [f32; 4],
     pub(super) texture_file: &'static str,
+    // Optional translucent cloud map rendered as a thin shell just above the
+    // surface (e.g. Venus). `None` for bodies with no separate cloud layer.
+    pub(super) cloud_texture: Option<&'static str>,
     // Signed sidereal spin rate in radians per simulated second.
     // Positive = prograde, negative = retrograde.
     pub(super) spin_radians_per_second: f32,
@@ -77,6 +80,16 @@ pub(super) const PLUTO_POLE_SCENE: [f32; 3] = [-0.677_73, -0.387_86, -0.624_69];
 const fn sidereal_spin_radians_per_second(sidereal_period_days: f64) -> f32 {
     (std::f64::consts::TAU / (sidereal_period_days * SECONDS_PER_DAY)) as f32
 }
+
+// Cloud shell radius as a multiple of the body's visual radius — thin enough to
+// hug the surface, below any atmosphere-glow halo (`atmosphere_scale`).
+pub(super) const CLOUD_LAYER_SCALE: f32 = 1.02;
+
+// Cloud super-rotation rate. Venus's upper atmosphere circles the planet in ~4
+// days (retrograde), vastly faster than its 243-day surface spin, so the cloud
+// shell drifts visibly relative to the surface map beneath it.
+pub(super) const CLOUD_SUPERROTATION_RADIANS_PER_SECOND: f32 =
+    sidereal_spin_radians_per_second(-4.2);
 
 #[derive(Resource)]
 pub(super) struct AppStatus {
@@ -300,6 +313,16 @@ pub(super) struct AtmosphereOf {
     pub(super) index: usize,
 }
 
+/// Marks the translucent cloud shell rendered just above a body's surface
+/// (currently only Venus). Linked to its parent body by `CloudOf`.
+#[derive(Component)]
+pub(super) struct CloudLayer;
+
+#[derive(Component)]
+pub(super) struct CloudOf {
+    pub(super) index: usize,
+}
+
 #[derive(Component)]
 pub(super) struct PlanetRing;
 
@@ -325,6 +348,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         visual_radius: 3.8,
         color: [1.0, 0.9, 0.55, 1.0],
         texture_file: "sun.jpg",
+        cloud_texture: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(25.38),
         mesh_subdivisions: 96,
         metallic: 0.0,
@@ -345,6 +369,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         visual_radius: 0.06,
         color: [0.65, 0.62, 0.59, 1.0],
         texture_file: "mercury.jpg",
+        cloud_texture: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(58.646),
         mesh_subdivisions: 56,
         metallic: 0.03,
@@ -365,6 +390,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         visual_radius: 0.15,
         color: [0.92, 0.76, 0.4, 1.0],
         texture_file: "venus.jpg",
+        cloud_texture: Some("venus_clouds.jpg"),
         spin_radians_per_second: sidereal_spin_radians_per_second(-243.025),
         mesh_subdivisions: 60,
         metallic: 0.02,
@@ -387,6 +413,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         visual_radius: 0.16,
         color: [0.3, 0.5, 1.0, 1.0],
         texture_file: "earth.jpg",
+        cloud_texture: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(0.997_269_68),
         mesh_subdivisions: 64,
         metallic: 0.05,
@@ -408,6 +435,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         visual_radius: 0.044,
         color: [0.84, 0.84, 0.8, 1.0],
         texture_file: "moon.jpg",
+        cloud_texture: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(27.321_661),
         mesh_subdivisions: 48,
         metallic: 0.01,
@@ -428,6 +456,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         visual_radius: 0.085,
         color: [0.8, 0.35, 0.2, 1.0],
         texture_file: "mars.jpg",
+        cloud_texture: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(1.025_957),
         mesh_subdivisions: 56,
         metallic: 0.02,
@@ -448,6 +477,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         visual_radius: 0.04,
         color: [0.74, 0.74, 0.72, 1.0],
         texture_file: "ceres.jpg",
+        cloud_texture: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(0.3781),
         mesh_subdivisions: 40,
         metallic: 0.01,
@@ -468,6 +498,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         visual_radius: 0.03,
         color: [0.7, 0.66, 0.62, 1.0],
         texture_file: "vesta.jpg",
+        cloud_texture: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(0.2226),
         mesh_subdivisions: 40,
         metallic: 0.01,
@@ -490,6 +521,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         visual_radius: 0.55,
         color: [0.82, 0.66, 0.42, 1.0],
         texture_file: "jupiter.jpg",
+        cloud_texture: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(0.41354),
         mesh_subdivisions: 72,
         metallic: 0.0,
@@ -511,6 +543,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         visual_radius: 0.046,
         color: [0.88, 0.65, 0.28, 1.0],
         texture_file: "io.jpg",
+        cloud_texture: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(1.769138),
         mesh_subdivisions: 48,
         metallic: 0.01,
@@ -532,6 +565,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         visual_radius: 0.039,
         color: [0.94, 0.91, 0.84, 1.0],
         texture_file: "europa.jpg",
+        cloud_texture: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(3.551181),
         mesh_subdivisions: 44,
         metallic: 0.02,
@@ -553,6 +587,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         visual_radius: 0.066,
         color: [0.68, 0.65, 0.60, 1.0],
         texture_file: "ganymede.jpg",
+        cloud_texture: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(7.154553),
         mesh_subdivisions: 52,
         metallic: 0.01,
@@ -574,6 +609,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         visual_radius: 0.060,
         color: [0.46, 0.44, 0.42, 1.0],
         texture_file: "callisto.jpg",
+        cloud_texture: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(16.689018),
         mesh_subdivisions: 48,
         metallic: 0.01,
@@ -594,6 +630,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         visual_radius: 1.5,
         color: [0.83, 0.77, 0.56, 1.0],
         texture_file: "saturn.jpg",
+        cloud_texture: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(0.444),
         mesh_subdivisions: 72,
         metallic: 0.0,
@@ -618,6 +655,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         visual_radius: 0.64,
         color: [0.57, 0.82, 0.92, 1.0],
         texture_file: "uranus.jpg",
+        cloud_texture: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(-0.71833),
         mesh_subdivisions: 64,
         metallic: 0.0,
@@ -638,6 +676,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         visual_radius: 0.62,
         color: [0.35, 0.45, 0.95, 1.0],
         texture_file: "neptune.jpg",
+        cloud_texture: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(0.67125),
         mesh_subdivisions: 64,
         metallic: 0.0,
@@ -660,6 +699,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         visual_radius: 0.018,
         color: [0.82, 0.76, 0.68, 1.0],
         texture_file: "pluto.jpg",
+        cloud_texture: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(-6.38723),
         mesh_subdivisions: 48,
         metallic: 0.0,
@@ -681,6 +721,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         visual_radius: 0.009,
         color: [0.74, 0.74, 0.72, 1.0],
         texture_file: "charon.jpg",
+        cloud_texture: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(-6.38723),
         mesh_subdivisions: 36,
         metallic: 0.0,
