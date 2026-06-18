@@ -23,6 +23,7 @@ pub(super) fn draw_side_panel(
     simulation_epoch: Res<SimulationEpoch>,
     body_runtime: Res<BodyRuntime>,
     mut trails: ResMut<BodyTrails>,
+    mut diagnostics_were_flagged: Local<bool>,
 ) -> Result {
     let mode_text = if app_status.spice_enabled {
         "SPICE"
@@ -69,15 +70,19 @@ pub(super) fn draw_side_panel(
             // Primary navigation: the search field stays pinned above the body
             // list it filters so query and results share one eye-span.
             ui.label("Search target:");
-            ui.horizontal(|ui| {
+            // Right-to-left so the expanding text field is added last: in a
+            // left-to-right row a `desired_width(INFINITY)` field consumes the
+            // whole width and pushes the "Clear" button off the fixed-width
+            // panel's right edge, where it is clipped and unclickable.
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("Clear").clicked() {
+                    simulation_state.target_filter.clear();
+                }
                 ui.add(
                     egui::TextEdit::singleline(&mut simulation_state.target_filter)
                         .hint_text("Filter bodies…")
                         .desired_width(f32::INFINITY),
                 );
-                if ui.button("Clear").clicked() {
-                    simulation_state.target_filter.clear();
-                }
             });
             ui.add_space(2.0);
 
@@ -278,10 +283,18 @@ pub(super) fn draw_side_panel(
 
                     // Diagnostics are demoted out of prime real estate, but the
                     // section auto-expands when there's something wrong to see.
+                    // `default_open` is only honoured the first time the header
+                    // is shown (egui then persists the open/closed state), and
+                    // sync/texture failures arrive asynchronously *after* the
+                    // first frame — so force the section open on the rising edge
+                    // of `has_issues`. The user can still collapse it afterwards.
                     let has_issues =
                         !horizons_sync.failures.is_empty() || !texture_status.failed.is_empty();
+                    let issues_just_appeared = has_issues && !*diagnostics_were_flagged;
+                    *diagnostics_were_flagged = has_issues;
                     egui::CollapsingHeader::new("Status & diagnostics")
                         .default_open(has_issues)
+                        .open(issues_just_appeared.then_some(true))
                         .show(ui, |ui| {
                             ui.small(&app_status.status_line);
                             ui.small(&horizons_sync.status_line);
