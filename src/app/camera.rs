@@ -1,7 +1,8 @@
 use super::types::{
     BODIES, BodyRuntime, CameraFlight, CameraMode, FREE_CAMERA_BOOST_MULTIPLIER,
     FREE_CAMERA_LOOK_SENSITIVITY, FREE_CAMERA_MAX_SPEED, FREE_CAMERA_MIN_SPEED,
-    FREE_CAMERA_SPEED_FACTOR, MainCamera, OrbitCameraState, SimulationState,
+    FREE_CAMERA_SPEED_FACTOR, MainCamera, ORBIT_KEY_ROTATE_SPEED, ORBIT_KEY_ZOOM_RATE,
+    OrbitCameraState, SimulationState,
 };
 use bevy::prelude::*;
 use bevy_egui::input::EguiWantsInput;
@@ -103,6 +104,7 @@ pub(super) fn toggle_camera_mode_impl(
 }
 
 pub(super) fn orbit_camera_input(
+    time: Res<Time>,
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     keyboard: Res<ButtonInput<KeyCode>>,
     mouse_motion: Res<bevy::input::mouse::AccumulatedMouseMotion>,
@@ -113,6 +115,56 @@ pub(super) fn orbit_camera_input(
     if orbit_camera.mode != CameraMode::Orbit {
         return;
     }
+
+    // Keyboard orbit + zoom: a pointer-free path to every mouse gesture so the
+    // inspection camera is fully operable from the keyboard (WCAG 2.1.1). WASD
+    // rotates, Q/E zooms (mirroring free-fly's WASD-move / Q-E pairing); held
+    // keys act continuously, scaled by frame time. Gated on egui not wanting
+    // the keyboard so typing in the side panel never drives the camera.
+    if !egui_input.wants_any_keyboard_input() {
+        let dt = time.delta_secs();
+        let mut keyboard_override = false;
+
+        let mut yaw_delta = 0.0;
+        let mut pitch_delta = 0.0;
+        if keyboard.pressed(KeyCode::KeyA) {
+            yaw_delta += ORBIT_KEY_ROTATE_SPEED * dt;
+        }
+        if keyboard.pressed(KeyCode::KeyD) {
+            yaw_delta -= ORBIT_KEY_ROTATE_SPEED * dt;
+        }
+        if keyboard.pressed(KeyCode::KeyW) {
+            pitch_delta += ORBIT_KEY_ROTATE_SPEED * dt;
+        }
+        if keyboard.pressed(KeyCode::KeyS) {
+            pitch_delta -= ORBIT_KEY_ROTATE_SPEED * dt;
+        }
+        if keyboard.any_pressed([KeyCode::KeyA, KeyCode::KeyD, KeyCode::KeyW, KeyCode::KeyS]) {
+            orbit_camera.yaw += yaw_delta;
+            orbit_camera.pitch = (orbit_camera.pitch + pitch_delta).clamp(MIN_PITCH, MAX_PITCH);
+            keyboard_override = true;
+        }
+
+        // Q zooms out, E zooms in.
+        let mut zoom_dir = 0.0;
+        if keyboard.pressed(KeyCode::KeyQ) {
+            zoom_dir += 1.0;
+        }
+        if keyboard.pressed(KeyCode::KeyE) {
+            zoom_dir -= 1.0;
+        }
+        if keyboard.any_pressed([KeyCode::KeyQ, KeyCode::KeyE]) {
+            let zoom_factor = (1.0 + zoom_dir * ORBIT_KEY_ZOOM_RATE * dt).clamp(0.2, 5.0);
+            orbit_camera.distance = (orbit_camera.distance * zoom_factor)
+                .clamp(orbit_camera.min_distance, orbit_camera.max_distance);
+            keyboard_override = true;
+        }
+
+        if keyboard_override {
+            orbit_camera.flight = None;
+        }
+    }
+
     if egui_input.wants_any_pointer_input() {
         return;
     }
