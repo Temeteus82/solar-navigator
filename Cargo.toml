@@ -47,6 +47,12 @@ bevy = { version = "0.18.1", default-features = false, features = [
     "tonemapping_luts",
 ] }
 bevy_egui = { version = "0.39.1", default-features = false, features = [
+    # Build egui's AccessKit tree and bridge it to the OS accessibility layer
+    # (Narrator / VoiceOver / NVDA) via bevy_winit's adapters, so screen-reader
+    # users can reach the side panel's controls. DefaultPlugins already supplies
+    # the bevy_a11y resources this relies on; the feature is independent of the
+    # `spice` flag, so both build modes get accessibility.
+    "accesskit",
     "default_fonts",
     "manage_clipboard",
     "open_url",
