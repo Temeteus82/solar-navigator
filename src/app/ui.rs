@@ -82,19 +82,31 @@ pub(super) fn draw_side_panel(
             // left-to-right row a `desired_width(INFINITY)` field consumes the
             // whole width and pushes the "Clear" button off the fixed-width
             // panel's right edge, where it is clipped and unclickable.
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("Clear").clicked() {
-                    simulation_state.target_filter.clear();
-                }
-                // Associate the visible label with the field so a screen reader
-                // announces it as a named control (WCAG 3.3.2 / 4.1.2).
-                ui.add(
-                    egui::TextEdit::singleline(&mut simulation_state.target_filter)
-                        .hint_text("Filter bodies…")
-                        .desired_width(f32::INFINITY),
-                )
-                .labelled_by(search_label.id);
-            });
+            //
+            // Allocate an explicit one-row height. `with_layout` would hand the
+            // inner layout the panel's full remaining height, and a right-to-left
+            // row aligned `Center` then expands to fill it — vertically centring
+            // the field and starving the body list / scroll area below it. Sizing
+            // the region to `interact_size.y` (as `ui.horizontal` does internally)
+            // keeps it a single row.
+            let row_size = egui::vec2(ui.available_width(), ui.spacing().interact_size.y);
+            ui.allocate_ui_with_layout(
+                row_size,
+                egui::Layout::right_to_left(egui::Align::Center),
+                |ui| {
+                    if ui.button("Clear").clicked() {
+                        simulation_state.target_filter.clear();
+                    }
+                    // Associate the visible label with the field so a screen
+                    // reader announces it as a named control (WCAG 3.3.2 / 4.1.2).
+                    ui.add(
+                        egui::TextEdit::singleline(&mut simulation_state.target_filter)
+                            .hint_text("Filter bodies…")
+                            .desired_width(f32::INFINITY),
+                    )
+                    .labelled_by(search_label.id);
+                },
+            );
             ui.add_space(2.0);
 
             let filter_lc = simulation_state.target_filter.trim().to_ascii_lowercase();
