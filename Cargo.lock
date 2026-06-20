@@ -628,6 +628,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8d0a7e4806f3f242326d2c6157531c36d710f3bf320ebc0a1678e44635ed0eac"
 dependencies = [
  "arboard",
+ "bevy_a11y",
  "bevy_app",
  "bevy_asset",
  "bevy_camera",
@@ -1968,6 +1969,7 @@ version = "0.33.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a9b567d356674e9a5121ed3fedfb0a7c31e059fe71f6972b691bcd0bfc284e3"
 dependencies = [
+ "accesskit",
  "ahash",
  "bitflags 2.13.0",
  "emath",

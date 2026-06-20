@@ -44,6 +44,14 @@ pub(super) fn draw_side_panel(
                 _ => font_id.size,
             };
         }
+
+        // Accessibility (WCAG 1.4.3): egui's dark default body text (~gray 140,
+        // ~5:1 on the panel background) leaves no headroom for a *passing*
+        // weaker hint/secondary colour. Lift primary text to ~gray 205 (~10:1)
+        // and raise the weak-text alpha so hint and secondary text still clear
+        // the 4.5:1 minimum (~4.8:1) while staying visibly subordinate.
+        style.visuals.widgets.noninteractive.fg_stroke.color = egui::Color32::from_gray(205);
+        style.visuals.weak_text_alpha = 0.66;
     });
     // Keep a small right inner_margin for readability but not so wide that
     // the blank gutter makes the separator visible. The separator line itself
@@ -69,7 +77,7 @@ pub(super) fn draw_side_panel(
 
             // Primary navigation: the search field stays pinned above the body
             // list it filters so query and results share one eye-span.
-            ui.label("Search target:");
+            let search_label = ui.label("Search target:");
             // Right-to-left so the expanding text field is added last: in a
             // left-to-right row a `desired_width(INFINITY)` field consumes the
             // whole width and pushes the "Clear" button off the fixed-width
@@ -78,11 +86,14 @@ pub(super) fn draw_side_panel(
                 if ui.button("Clear").clicked() {
                     simulation_state.target_filter.clear();
                 }
+                // Associate the visible label with the field so a screen reader
+                // announces it as a named control (WCAG 3.3.2 / 4.1.2).
                 ui.add(
                     egui::TextEdit::singleline(&mut simulation_state.target_filter)
                         .hint_text("Filter bodies…")
                         .desired_width(f32::INFINITY),
-                );
+                )
+                .labelled_by(search_label.id);
             });
             ui.add_space(2.0);
 
@@ -213,34 +224,37 @@ pub(super) fn draw_side_panel(
                                 && let Some(spec) = BODIES.get(selected_index)
                             {
                                 ui.label(spec.display_name);
-                                ui.small(format!(
+                                // Substantive body facts read at body size (15pt)
+                                // rather than 11pt `small` for legibility at desk
+                                // viewing distance (WCAG 1.4.4 / readability).
+                                ui.label(format!(
                                     "Radius: {} km",
                                     format_large(spec.physical_radius_km)
                                 ));
-                                ui.small(format!("Mass: {:.3e} kg", spec.mass_kg));
+                                ui.label(format!("Mass: {:.3e} kg", spec.mass_kg));
                                 if let Some(period_days) = spec.orbital_period_days {
                                     if period_days < 800.0 {
-                                        ui.small(format!("Orbital period: {period_days:.2} days"));
+                                        ui.label(format!("Orbital period: {period_days:.2} days"));
                                     } else {
-                                        ui.small(format!(
+                                        ui.label(format!(
                                             "Orbital period: {:.2} years",
                                             period_days / 365.256
                                         ));
                                     }
                                 }
                                 if let Some(sma_au) = spec.semi_major_axis_au {
-                                    ui.small(format!("Semi-major axis: {sma_au:.3} AU"));
+                                    ui.label(format!("Semi-major axis: {sma_au:.3} AU"));
                                 }
                                 if let Some(position) = body_runtime.positions.get(selected_index) {
                                     let distance_au = position.length() / AU_TO_SCENE_UNITS;
                                     let distance_km = distance_au * KM_PER_AU;
-                                    ui.small(format!(
+                                    ui.label(format!(
                                         "Distance from Sun: {distance_au:.3} AU ({:.3e} km)",
                                         distance_km
                                     ));
                                     // Light-travel time (one-way) from the Sun.
                                     let light_minutes = distance_au * 499.004784 / 60.0;
-                                    ui.small(format!("Light from Sun: {light_minutes:.2} min"));
+                                    ui.label(format!("Light from Sun: {light_minutes:.2} min"));
                                 }
                             } else {
                                 ui.small("Click a body above to inspect it.");
@@ -274,6 +288,7 @@ pub(super) fn draw_side_panel(
                                 ui.label("- Left or right drag: orbit");
                                 ui.label("- Shift + left drag: pan");
                                 ui.label("- Mouse wheel / trackpad scroll: zoom");
+                                ui.label("- WASD: orbit, Q/E: zoom (keyboard)");
                                 ui.label("- F: free camera");
                             }
                             ui.label("- Space: pause/unpause");
