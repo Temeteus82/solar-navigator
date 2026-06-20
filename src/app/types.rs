@@ -28,6 +28,12 @@ pub(super) const FREE_CAMERA_MAX_SPEED: f32 = 6_000.0; // scene units/s ceiling 
 pub(super) const FREE_CAMERA_BOOST_MULTIPLIER: f32 = 5.0; // hold Shift to boost
 pub(super) const FREE_CAMERA_LOOK_SENSITIVITY: f32 = 0.0026; // radians per pixel of mouse motion
 
+// Keyboard orbit-camera tuning — a pointer-free path to the mouse drag/scroll
+// controls (accessibility: full keyboard parity). Held keys rotate and zoom
+// continuously, scaled by frame time.
+pub(super) const ORBIT_KEY_ROTATE_SPEED: f32 = 1.2; // radians/s of yaw or pitch while a key is held
+pub(super) const ORBIT_KEY_ZOOM_RATE: f32 = 1.5; // exponential zoom rate per second while Q/E is held
+
 #[derive(Clone, Copy)]
 pub(super) struct RingSpec {
     pub(super) inner_radius: f32,
