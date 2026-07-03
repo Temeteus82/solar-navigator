@@ -77,8 +77,13 @@ download script accepts `-Force` to re-download files that are already present.
 
 | Input | Action |
 |-------|--------|
-| Right drag / scroll | Orbit and zoom camera |
+| Left / right drag / scroll | Orbit and zoom camera |
 | Shift + left drag | Pan camera |
+| Click a body | Select it and fly the camera to it |
+| `F` | Toggle Orbit camera ↔ Free-fly camera |
+| `W`/`A`/`S`/`D`, `Q`/`E` (Free mode) | Fly forward/left/back/right, down/up |
+| Drag (Free mode) | Look around |
+| Shift (Free mode) | Boost movement speed |
 | `Space` | Pause / unpause simulation |
 | `Up` / `Down` | Increase / decrease simulation speed |
 | `Backspace` | Reset simulation state and camera |
