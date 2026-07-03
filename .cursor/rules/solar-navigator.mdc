@@ -16,7 +16,7 @@ idiomatic Rust that future agents can extend with minimal context.
 - **bevy_egui** for the side panel UI
 - **rust-spice** (optional `spice` feature) wrapping NAIF CSPICE for ephemerides
 - **reqwest** for NASA JPL Horizons HTTP queries
-- **wgpu v27** / Metal (macOS) rendering backend
+- **wgpu v27** rendering backend (D3D12 on Windows, Vulkan on Linux, Metal on macOS)
 
 ## Module Layout
 ```
@@ -28,9 +28,10 @@ src/
     types.rs       — every Resource, Component, and the BODIES constant array
     setup.rs       — Startup systems: scene spawn, texture loading, Horizons sync
     simulation.rs  — Update systems: keyboard input, time advance, body positions
-    camera.rs      — Update systems: orbit camera, jump/fly-to, tracking
+    camera.rs      — Update systems: orbit + free-fly cameras, mode toggle (F), jump/fly-to, tracking
     render.rs      — Update systems: lighting, visibility, window title
-    materials.rs   — PlanetAtmosphereMaterial (custom WGSL shader)
+    asteroids.rs   — Procedural asteroid belt: Keplerian swarm spawn + per-frame update
+    materials.rs   — PlanetAtmosphereMaterial + PlanetRingMaterial (custom WGSL shaders)
     ui.rs          — egui side panel
     util.rs        — asset resolution, image helpers, format_simulation_speed
 ```
@@ -51,6 +52,12 @@ scene_x =  spice_x * AU_TO_SCENE_UNITS
 scene_y =  spice_z * AU_TO_SCENE_UNITS   ← SPICE Z → Bevy Y
 scene_z = -spice_y * AU_TO_SCENE_UNITS   ← negated to preserve right-handedness
 ```
+
+## Lighting
+Planet shading comes from a DirectionalLight (`sky_fill`, 1800 lux) re-aimed each frame
+from the Sun toward the camera focus, so every body is evenly lit regardless of distance.
+The solar PointLight (`solar_key`) is dimmed to 80 MW, shadows off — inner-system
+specular/bloom only. Ambient is 0.25. `MainCamera` adds AutoExposure, Bloom, and SSAO.
 
 ## Build Commands
 ```bash
