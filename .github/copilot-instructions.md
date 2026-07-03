@@ -9,7 +9,8 @@ clean, idiomatic Rust that future agents can extend with minimal context.
 - Rust 2024 edition · Bevy 0.18.1 ECS · bevy_egui · wgpu v27 (Metal/Vulkan/DX12)
 - `rust-spice` (optional `spice` Cargo feature) — NAIF CSPICE ephemerides
 - `reqwest` — NASA JPL Horizons HTTP queries
-- Custom WGSL atmosphere shader in `assets/shaders/planet_atmosphere.wgsl`
+- Custom WGSL shaders: atmosphere halo (`assets/shaders/planet_atmosphere.wgsl`) and
+  Saturn's ring shadow (`assets/shaders/planet_ring.wgsl`)
 
 ## Architecture
 ```
@@ -21,9 +22,10 @@ src/
     types.rs       — Resources, Components, BODIES array (18 solar-system bodies)
     setup.rs       — Startup: scene spawn, textures, Horizons sync task
     simulation.rs  — Update: keyboard, time advance, body positions, spin
-    camera.rs      — Update: orbit camera, fly-to animation, body tracking
+    camera.rs      — Update: orbit + free-fly cameras (F toggles), fly-to animation, body tracking
     render.rs      — Update: solar lighting, visibility toggles, window title
-    materials.rs   — PlanetAtmosphereMaterial (Bevy ExtendedMaterial + WGSL)
+    asteroids.rs   — Update: procedural asteroid belt (Keplerian swarm)
+    materials.rs   — PlanetAtmosphereMaterial + PlanetRingMaterial (Bevy ExtendedMaterial + WGSL)
     ui.rs          — egui side panel (target search, sim controls, body list)
     util.rs        — asset resolution, cubemap conversion, format helpers
 ```
@@ -37,8 +39,12 @@ src/
 - Coordinate remap: SPICE Z → Bevy Y; negate SPICE Y → Bevy Z (right-handed).
 - AU scale: `AU_TO_SCENE_UNITS = 250.0` (constant, no runtime switching).
 - Body visual radii are ~15× physical size so they are visible at solar-system scale.
-- Solar lighting: 1.6 GW point light at origin, `shadows_enabled = true`,
-  ambient 0.3, sky fill 5 lux — inverse-square falloff dominates.
+- Solar lighting: DirectionalLight `sky_fill` (1800 lux, shadows on) re-aimed each frame
+  from the Sun toward the camera focus so every body is evenly lit; PointLight `solar_key`
+  dimmed to 80 MW with shadows off (specular/bloom near the Sun only); ambient 0.25.
+  `MainCamera` post-processing: AutoExposure, Bloom, SSAO.
+- Camera modes: `F` toggles Orbit (tethered, click-to-fly-to) vs Free (WASD/QE fly-cam,
+  drag to look, Shift to boost); hand-off is seamless in both directions.
 
 ## Quality Gate (run before every commit)
 ```bash

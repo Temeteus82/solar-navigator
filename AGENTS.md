@@ -108,9 +108,10 @@ src/
     types.rs         — every Resource, Component, and the BODIES constant array
     setup.rs         — Startup systems: scene spawn, texture loading, Horizons sync task
     simulation.rs    — Update systems: keyboard input, time advance, body positions
-    camera.rs        — Update systems: orbit camera, jump/fly-to, tracking
+    camera.rs        — Update systems: orbit + free-fly cameras, mode toggle (F), jump/fly-to, tracking
     render.rs        — Update systems: lighting presets, visibility, window title
-    materials.rs     — PlanetAtmosphereMaterial (custom Bevy Material backed by WGSL)
+    asteroids.rs     — Procedural asteroid belt: Keplerian swarm spawn + per-frame update
+    materials.rs     — PlanetAtmosphereMaterial + PlanetRingMaterial (custom Bevy Materials, WGSL)
     ui.rs            — egui side panel (EguiPrimaryContextPass schedule)
     util.rs          — asset resolution, image/starfield helpers, format_simulation_speed
 ```
@@ -126,7 +127,7 @@ The `spice` Cargo feature (on by default) gates all CSPICE integration with `#[c
 
 ### BODIES array and BodySpec
 
-`types.rs:BODIES` is the canonical static array of all 14 rendered solar-system bodies. Every body's display name, SPICE target string, visual radius, texture filename, PBR parameters, spin rate, and atmosphere config live here. Body index is the stable identifier used everywhere (queries, positions vec, camera targeting).
+`types.rs:BODIES` is the canonical static array of all 18 rendered solar-system bodies. Every body's display name, SPICE target string, visual radius, texture filename, PBR parameters, spin rate, and atmosphere config live here. Body index is the stable identifier used everywhere (queries, positions vec, camera targeting).
 
 ### Coordinate remapping
 
@@ -140,18 +141,33 @@ scene_z = -au_y  * scale   ← negate to preserve right-handedness
 
 The same sign convention applies to the Horizons sync offset stored in `HorizonsSyncState::per_body_au_offset`.
 
+### Camera modes
+
+`OrbitCameraState::mode` (`CameraMode::Orbit | Free`) selects between two cameras; `F`
+toggles, and the egui panel exposes a button. **Orbit** (default) is the target-tethered
+inspection camera (drag to orbit, shift-drag to pan, scroll to zoom, click a body to
+fly-to and track). **Free** is an untethered fly-cam: WASD to move, Q/E down/up, drag to
+look, Shift to boost. Free-cam speed auto-scales with distance to the nearest body
+(`FREE_CAMERA_*` constants in `types.rs`). Mode-switches hand off seamlessly between the
+two poses.
+
 ### Horizons sync
 
 On startup (SPICE mode only), `setup::start_horizons_sync` spawns an async task that calls NASA JPL Horizons for each body's current heliocentric position and computes per-body AU offsets relative to what SPICE reports (`per_body_au_offset`). These offsets are added each frame in `update_body_positions` to correct for any kernel/reference-frame drift. The task retries up to 5 times with exponential backoff (1 s, 2 s, 4 s … capped at 30 s). Manual retry is available via the UI button.
 
 ### Lighting and AU scale
 
-The app uses a single Realistic lighting mode. `AU_TO_SCENE_UNITS = 250.0` is the fixed
-scale constant in `types.rs`. `render.rs:apply_lighting_preset` configures the solar key
-light (1.6 GW point light at origin, `shadows_enabled = true`), a faint directional sky
-fill (5 lux), and a low ambient (0.3) so the Sun's inverse-square falloff creates a visible
-brightness gradient from Mercury out to Neptune. Body visual radii are set to ~15× their
-physical size so they are visible at solar-system scale without being artificially huge.
+`AU_TO_SCENE_UNITS = 250.0` is the fixed scale constant in `types.rs`.
+`render.rs:apply_lighting_preset` runs every frame and is the source of truth for lighting.
+Planet shading is driven by a **DirectionalLight** (`sky_fill`, 1800 lux, `shadows_enabled =
+true`) so every body receives equal sunlight regardless of its distance from the Sun. Each
+frame its direction is re-aimed from the Sun toward the camera's focus target, keeping the
+lit hemisphere of the inspected body facing the viewer. The solar **PointLight**
+(`solar_key`) is dimmed to 80 MW with shadows disabled — it only adds inner-system specular
+highlights and bloom near the Sun. A low ambient (0.25) lifts the night side. The
+`MainCamera` carries post-processing (`AutoExposure`, `Bloom`, SSAO) that shapes the final
+image. Body visual radii are ~15× their physical size so they are visible at solar-system
+scale without being artificially huge.
 
 ### Asset resolution order
 
@@ -161,11 +177,19 @@ At runtime `util::resolve_assets_root` checks in order:
 3. macOS app bundle (`Contents/Resources/assets`)
 4. Compile-time source-tree fallback (`CARGO_MANIFEST_DIR/assets`)
 
-Textures and SPICE kernels are never bundled in the repo — download them with the scripts. Missing textures degrade gracefully to the body's fallback color.
+The planet/body source `.jpg`/`.png` textures **are committed** to the repo — restore them
+with `git restore assets/textures/` if they go missing, no download needed. Only the
+locally generated GPU-compressed `.ktx2`/`.dds` files are gitignored (`scripts/compress_textures.*`
+encode them as BC7 on Windows/Linux, ASTC 4×4 on Apple Silicon). SPICE kernels are never
+bundled — download them with `scripts/download_spice_kernels.*`. Missing textures degrade
+gracefully to the body's fallback color. See `docs/gpu-profiling.md` to verify compressed
+textures upload correctly and to profile the render pipeline.
 
-### Custom atmosphere shader
+### Custom shaders
 
 `PlanetAtmosphereMaterial` (`materials.rs`) uses `assets/shaders/planet_atmosphere.wgsl`. It is rendered front-face-culled with additive blending and no depth write, creating a limb-glow halo. The `params` uniform encodes `(density, rim_power, forward_phase_power, brightness)`.
+
+`PlanetRingMaterial` (`materials.rs`) uses `assets/shaders/planet_ring.wgsl` for Saturn's rings; its `planet_position` uniform is refreshed every frame (`simulation.rs:sync_ring_material_uniforms`) so the shader can cast the planet's cylindrical shadow across the ring disc.
 
 ### CSPICE build wiring
 
