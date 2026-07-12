@@ -32,7 +32,8 @@ pub(super) fn draw_side_panel(
     };
 
     let ctx = contexts.ctx_mut()?;
-    ctx.style_mut(|style| {
+    let theme = ctx.theme();
+    ctx.style_mut_of(theme, |style| {
         // Bump every text style up by 1pt from egui defaults.
         for (style_key, font_id) in style.text_styles.iter_mut() {
             font_id.size = match style_key {
@@ -56,7 +57,7 @@ pub(super) fn draw_side_panel(
     // Keep a small right inner_margin for readability but not so wide that
     // the blank gutter makes the separator visible. The separator line itself
     // is suppressed via show_separator_line(false) below.
-    let panel_frame = egui::Frame::side_top_panel(&ctx.style())
+    let panel_frame = egui::Frame::side_top_panel(&ctx.style_of(theme))
         .stroke(egui::Stroke::NONE)
         .inner_margin(egui::Margin {
             left: 8,
@@ -65,12 +66,24 @@ pub(super) fn draw_side_panel(
             bottom: 2,
         });
 
-    egui::SidePanel::left("navigator_side_panel")
-        .exact_width(SIDE_PANEL_WIDTH_PX)
+    // egui 0.35 unified Side/TopBottom/CentralPanel behind `Panel`, which is
+    // shown inside a `Ui` rather than directly against the `Context`. Build a
+    // full-viewport root `Ui` to anchor it to, matching bevy_egui's own
+    // side_panel example.
+    let mut viewport_ui = egui::Ui::new(
+        ctx.clone(),
+        egui::Id::new("navigator_root_ui"),
+        egui::UiBuilder::new()
+            .layer_id(egui::LayerId::background())
+            .max_rect(ctx.viewport_rect()),
+    );
+
+    egui::Panel::left("navigator_side_panel")
+        .exact_size(SIDE_PANEL_WIDTH_PX)
         .resizable(false)
         .show_separator_line(false)
         .frame(panel_frame)
-        .show(ctx, |ui| {
+        .show(&mut viewport_ui, |ui| {
             ui.heading("Solar Navigator");
             ui.small(format!("Mode: {mode_text}"));
             ui.add_space(4.0);

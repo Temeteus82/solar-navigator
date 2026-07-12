@@ -14,7 +14,7 @@ use bevy::math::DVec3;
 use bevy::pbr::MaterialPlugin;
 use bevy::post_process::auto_exposure::AutoExposurePlugin;
 use bevy::prelude::*;
-use bevy_egui::{EguiPlugin, EguiPrimaryContextPass};
+use bevy_egui::{EguiGlobalSettings, EguiPlugin, EguiPrimaryContextPass};
 use chrono::{Datelike, Utc};
 use materials::{PlanetAtmosphereMaterial, PlanetRingMaterial};
 use std::f32::consts::PI;
@@ -83,7 +83,14 @@ pub(crate) fn run() {
             free_yaw: 0.0,
             free_pitch: 0.0,
         })
-        .insert_non_send_resource(EphemerisResource { ephemeris })
+        .insert_non_send(EphemerisResource { ephemeris })
+        // We spawn our own dedicated UI-only camera for egui in setup::setup_scene
+        // (see the comment there) instead of letting bevy_egui auto-attach a
+        // primary context to the first camera it finds.
+        .insert_resource(EguiGlobalSettings {
+            auto_create_primary_context: false,
+            ..default()
+        })
         .add_plugins(DefaultPlugins.set(AssetPlugin {
             file_path: asset_file_path,
             ..default()
