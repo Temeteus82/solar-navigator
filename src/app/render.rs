@@ -49,14 +49,14 @@ pub(super) fn apply_lighting_preset(
 
     sky_fill.illuminance = 1_800.0;
     sky_fill.color = Color::srgb(1.0, 0.97, 0.9);
-    sky_fill.shadows_enabled = true;
+    sky_fill.shadow_maps_enabled = true;
 
     // Point light at the Sun is kept dim — its only role is to add a
     // small amount of inner-system specular detail and bloom near the
     // Sun itself. The directional light handles the actual planet shading.
     solar_key.intensity = 80_000_000.0;
     solar_key.color = Color::srgb(1.0, 0.97, 0.9);
-    solar_key.shadows_enabled = false;
+    solar_key.shadow_maps_enabled = false;
 
     ambient.brightness = 0.25;
 
