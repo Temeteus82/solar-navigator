@@ -273,7 +273,7 @@ pub(super) fn sync_ring_material_uniforms(
         let Some(position) = body_runtime.positions.get(ring.index) else {
             continue;
         };
-        let Some(material) = ring_materials.get_mut(&material_handle.0) else {
+        let Some(mut material) = ring_materials.get_mut(&material_handle.0) else {
             continue;
         };
         let p = position.as_vec3();

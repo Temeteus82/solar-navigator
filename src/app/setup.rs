@@ -13,6 +13,8 @@ use super::util::{
 use crate::ephemeris::{
     fetch_horizons_heliocentric_position_au_with_client, horizons_command_for_target,
 };
+use bevy::camera::CameraOutputMode;
+use bevy::camera::visibility::RenderLayers;
 use bevy::core_pipeline::prepass::{DepthPrepass, NormalPrepass};
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::light::{GeneratedEnvironmentMapLight, NotShadowCaster};
@@ -21,7 +23,9 @@ use bevy::pbr::ScreenSpaceAmbientOcclusion;
 use bevy::post_process::auto_exposure::AutoExposure;
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
+use bevy::render::render_resource::BlendState;
 use bevy::tasks::{AsyncComputeTaskPool, futures_lite::future};
+use bevy_egui::PrimaryEguiContext;
 use chrono::Utc;
 
 static ICON_PNG_SMALL: &[u8] = include_bytes!("../../assets/icon/AppIcon.iconset/icon_32x32.png");
@@ -87,6 +91,30 @@ pub(super) fn setup_scene(
         ScreenSpaceAmbientOcclusion::default(),
     ));
 
+    // Egui's overlay pass and Bloom's PostProcess composite pass are both
+    // only loosely ordered (`.after(EarlyPostProcess)`/`.in_set(PostProcess)`)
+    // against each other in Bevy 0.19's Core3d schedule, and empirically the
+    // scheduler runs Bloom's view-target swap after egui's paint — silently
+    // erasing the whole side panel. Give egui its own dedicated UI-only
+    // camera (no world geometry, alpha-blended on top at a higher `order`)
+    // so it composites after the *entire* fully bloomed/tonemapped 3D output
+    // instead of racing part of that pipeline. Matches bevy_egui's own
+    // `side_panel` example for this Bevy/egui version pairing.
+    commands.spawn((
+        PrimaryEguiContext,
+        Camera2d,
+        RenderLayers::none(),
+        Camera {
+            order: 1,
+            output_mode: CameraOutputMode::Write {
+                blend_state: Some(BlendState::ALPHA_BLENDING),
+                clear_color: ClearColorConfig::None,
+            },
+            clear_color: ClearColorConfig::Custom(Color::NONE),
+            ..default()
+        },
+    ));
+
     let solar_key = commands
         .spawn((
             PointLight {
@@ -95,7 +123,7 @@ pub(super) fn setup_scene(
                 color: Color::srgb(1.0, 0.97, 0.9),
                 // Cast shadows so bodies occlude each other (eclipse geometry
                 // is visible when zoomed into the Earth–Moon or Pluto–Charon systems).
-                shadows_enabled: true,
+                shadow_maps_enabled: true,
                 ..default()
             },
             Transform::from_translation(Vec3::ZERO),
@@ -107,7 +135,7 @@ pub(super) fn setup_scene(
             DirectionalLight {
                 illuminance: 5.0,
                 color: Color::srgb(0.3, 0.35, 0.45),
-                shadows_enabled: false,
+                shadow_maps_enabled: false,
                 ..default()
             },
             Transform::from_translation(Vec3::new(0.0, 1.0, 0.0))
@@ -121,7 +149,7 @@ pub(super) fn setup_scene(
                 intensity: 0.0,
                 range: 2_700.0,
                 color: Color::srgb(0.47, 0.55, 0.78),
-                shadows_enabled: false,
+                shadow_maps_enabled: false,
                 ..default()
             },
             Transform::from_translation(Vec3::new(-150.0, 100.0, 220.0)),
