@@ -68,14 +68,14 @@ jobs:
         run: cargo fmt --check
 
       - name: cargo check
-        run: cargo check --all-targets ${{ matrix.feature_flags }}
+        run: cargo check --locked --all-targets ${{ matrix.feature_flags }}
 
       - name: cargo clippy
-        run: cargo clippy --all-targets ${{ matrix.feature_flags }} -- -D warnings
+        run: cargo clippy --locked --all-targets ${{ matrix.feature_flags }} -- -D warnings
 
       - name: cargo test
         if: matrix.run_tests == 'true'
-        run: cargo test --all-targets ${{ matrix.feature_flags }}
+        run: cargo test --locked --all-targets ${{ matrix.feature_flags }}
 
   spice-native:
     strategy:
@@ -132,13 +132,13 @@ jobs:
         run: .\scripts\setup_cspice_windows_x86_64.ps1
 
       - name: cargo check (SPICE)
-        run: cargo check --all-targets --no-default-features --features spice
+        run: cargo check --locked --all-targets --no-default-features --features spice
 
       - name: cargo clippy (SPICE)
-        run: cargo clippy --all-targets --no-default-features --features spice -- -D warnings
+        run: cargo clippy --locked --all-targets --no-default-features --features spice -- -D warnings
 
       - name: cargo test (SPICE)
-        run: cargo test --all-targets --no-default-features --features spice
+        run: cargo test --locked --all-targets --no-default-features --features spice
 
   linux-distro-compat:
     strategy:
@@ -259,19 +259,19 @@ jobs:
         shell: bash
         run: |
           source "$HOME/.cargo/env"
-          cargo check --all-targets --no-default-features
+          cargo check --locked --all-targets --no-default-features
 
       - name: cargo clippy (portable)
         shell: bash
         run: |
           source "$HOME/.cargo/env"
-          cargo clippy --all-targets --no-default-features -- -D warnings
+          cargo clippy --locked --all-targets --no-default-features -- -D warnings
 
       - name: cargo test compile (portable)
         shell: bash
         run: |
           source "$HOME/.cargo/env"
-          cargo test --all-targets --no-default-features --no-run
+          cargo test --locked --all-targets --no-default-features --no-run
 
       - name: Install CSPICE toolkit
         shell: bash
@@ -283,4 +283,4 @@ jobs:
         shell: bash
         run: |
           source "$HOME/.cargo/env"
-          cargo check --all-targets --no-default-features --features spice
+          cargo check --locked --all-targets --no-default-features --features spice
