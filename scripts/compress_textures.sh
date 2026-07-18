@@ -73,7 +73,7 @@ fi
 # BC7 and ASTC 4x4 both tile the image in 4x4 blocks, so the GPU rejects any
 # texture whose width or height is not a multiple of 4 (wgpu panics with
 # "Height N is not a multiple of Bc7RgbaUnormSrgb's block height (4)"). A few
-# source maps ship with odd dimensions (e.g. Vesta's 4096x2047), so round them
+# source maps ship with odd dimensions (e.g. Vesta's 2405x1202), so round them
 # down to the nearest multiple of 4 at encode time. Dimensions are read via
 # sips (macOS, built-in) or ImageMagick's identify (Linux); if neither is
 # present we warn and encode as-is rather than risk a wrong resize.
@@ -95,35 +95,55 @@ image_dims() {
     return 1
 }
 
-# Echo the Compressonator -width/-height resize flags needed to make a source
-# 4x4-block aligned, or nothing if it already is / its size can't be read.
-block_align_args() {
-    local f="$1" dims w h tw th
+# The Compressonator CLI has no resize flags (verified against 4.5.52), so
+# odd-sized sources are pre-shrunk to the nearest multiple of 4 as a temp PNG
+# (lossless — avoids a second JPEG generation loss) using magick or sips.
+# Echoes the path to feed Compressonator: the original when already aligned or
+# when no resize tool is available, otherwise the temp PNG (caller deletes it).
+aligned_source() {
+    local f="$1" dims w h tw th tmp
     dims=$(image_dims "$f") || true
     if [ -z "${dims:-}" ]; then
         echo "  Could not read dimensions of $(basename "$f"); encoding without 4x4 block-alignment resize." >&2
+        printf '%s' "$f"
         return 0
     fi
     w=${dims% *}
     h=${dims#* }
     tw=$(( w - w % 4 ))
     th=$(( h - h % 4 ))
-    if [ "$tw" -ne "$w" ] || [ "$th" -ne "$h" ]; then
-        echo "  $(basename "$f") is ${w}x${h}; resizing to ${tw}x${th} for 4x4 block alignment" >&2
-        printf -- '-width %s -height %s' "$tw" "$th"
+    if [ "$tw" -eq "$w" ] && [ "$th" -eq "$h" ]; then
+        printf '%s' "$f"
+        return 0
     fi
+    echo "  $(basename "$f") is ${w}x${h}; resizing to ${tw}x${th} for 4x4 block alignment" >&2
+    tmp="$(mktemp -u).png"
+    if command -v magick >/dev/null 2>&1; then
+        magick "$f" -resize "${tw}x${th}!" "$tmp"
+    elif command -v convert >/dev/null 2>&1; then
+        convert "$f" -resize "${tw}x${th}!" "$tmp"
+    elif command -v sips >/dev/null 2>&1; then
+        sips -z "$th" "$tw" -s format png "$f" --out "$tmp" >/dev/null
+    else
+        echo "  No resize tool found (ImageMagick/sips); encoding as-is — the GPU may reject this texture." >&2
+        printf '%s' "$f"
+        return 0
+    fi
+    printf '%s' "$tmp"
 }
 
-# Textures that must NOT be compressed: the CPU-read backdrop and the unused
-# lower-resolution sun backup.
-skip="milky_way_8k.jpg sun_2k_backup.jpg"
+# Textures that must NOT be compressed: the CPU-read backdrop, the unused
+# lower-resolution sun backup, and the ring texture (setup.rs loads
+# saturn_ring.png directly, not via resolve_texture_load_path, so a .ktx2
+# would never be picked up).
+skip="milky_way_8k.jpg sun_2k_backup.jpg saturn_ring.png"
 
-for src in "$texture_dir"/*.jpg; do
+for src in "$texture_dir"/*.jpg "$texture_dir"/*.png; do
     name="$(basename "$src")"
     case " $skip " in
         *" $name "*) continue ;;
     esac
-    stem="${name%.jpg}"
+    stem="${name%.*}"
     out="$texture_dir/$stem.$ext"
     # When we fall back to .dds, drop any stale same-stem .ktx2: the loader
     # prefers .ktx2 -> .dds, so a leftover .ktx2 from an earlier (KTX2-capable)
@@ -137,11 +157,12 @@ for src in "$texture_dir"/*.jpg; do
         echo "Skipping $stem.$ext (already present, use --force to re-encode)"
         continue
     fi
-    align_args=$(block_align_args "$src")
+    encode_src=$(aligned_source "$src")
     echo "Encoding $name -> $stem.$ext ($fmt_label + mipmaps)..."
-    # align_args is intentionally unquoted so it word-splits into separate flags.
-    # shellcheck disable=SC2086
-    compressonatorcli "${dest_args[@]}" $align_args -miplevels 20 "$src" "$out" >/dev/null
+    compressonatorcli "${dest_args[@]}" -miplevels 20 "$encode_src" "$out" >/dev/null
+    if [ "$encode_src" != "$src" ]; then
+        rm -f "$encode_src"
+    fi
 done
 
 echo "Compressed ($fmt_label, .$ext) textures written to $texture_dir"
