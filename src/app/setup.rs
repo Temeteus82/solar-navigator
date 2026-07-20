@@ -19,7 +19,7 @@ use bevy::core_pipeline::prepass::{DepthPrepass, NormalPrepass};
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::light::{GeneratedEnvironmentMapLight, NotShadowCaster};
 use bevy::math::DVec3;
-use bevy::pbr::ScreenSpaceAmbientOcclusion;
+use bevy::pbr::{ContactShadows, ScreenSpaceAmbientOcclusion};
 use bevy::post_process::auto_exposure::AutoExposure;
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
@@ -89,6 +89,10 @@ pub(super) fn setup_scene(
         // SSAO adds subtle ambient occlusion at sphere edges and
         // the planet-space terminator boundary.
         ScreenSpaceAmbientOcclusion::default(),
+        // Screen-space contact shadows sharpen small-scale shadow detail
+        // (e.g. ring-on-planet, rock-on-rock in the asteroid belt) that the
+        // shadow map alone is too coarse to resolve.
+        ContactShadows::default(),
     ));
 
     // Egui's overlay pass and Bloom's PostProcess composite pass are both
