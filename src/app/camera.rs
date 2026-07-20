@@ -27,8 +27,16 @@ pub(super) fn handle_jump_requests(
     let target_distance = compute_target_distance_for_body(BODIES[target_index].visual_radius);
 
     if let Some(target_position) = body_runtime.positions.get(target_index) {
-        orbit_camera.target = target_position.as_vec3();
-        orient_camera_toward_sunward(&mut orbit_camera, target_position.as_vec3());
+        let target_position = target_position.as_vec3();
+        orbit_camera.target = target_position;
+        match parent_body_index(target_index).and_then(|i| body_runtime.positions.get(i)) {
+            Some(parent_position) => orient_camera_away_from_parent(
+                &mut orbit_camera,
+                target_position,
+                parent_position.as_vec3(),
+            ),
+            None => orient_camera_toward_sunward(&mut orbit_camera, target_position),
+        }
     }
     orbit_camera.distance = target_distance;
 
@@ -434,13 +442,43 @@ fn nearest_body_distance(body_runtime: &BodyRuntime, position: Vec3) -> f32 {
         .unwrap_or(0.0)
 }
 
+/// Index of `index`'s parent body (the planet a moon orbits), if it has one.
+fn parent_body_index(index: usize) -> Option<usize> {
+    let parent_name = match BODIES[index].display_name {
+        "Moon" => "Earth",
+        "Io" | "Europa" | "Ganymede" | "Callisto" => "Jupiter",
+        "Charon" => "Pluto",
+        _ => return None,
+    };
+    BODIES
+        .iter()
+        .position(|body| body.display_name == parent_name)
+}
+
 fn orient_camera_toward_sunward(orbit_camera: &mut OrbitCameraState, target_position: Vec3) {
     // When jumping to a planet, place the camera toward the Sun side so
     // the textured day hemisphere is visible instead of a black night side.
-    let sunward = (-target_position + Vec3::Y * 0.18).normalize_or_zero();
-    if sunward.length_squared() > 0.0 {
-        orbit_camera.yaw = sunward.x.atan2(sunward.z);
-        orbit_camera.pitch = sunward
+    orient_camera_toward_direction(orbit_camera, -target_position);
+}
+
+/// A moon's own offset from its planet is tiny next to its heliocentric
+/// distance, so a Sun-relative angle barely differs from the planet's own —
+/// whether the planet ends up in frame comes down to the moon's orbital
+/// phase, not viewing direction. Look from the side facing away from the
+/// parent instead, so it's reliably visible behind the moon.
+fn orient_camera_away_from_parent(
+    orbit_camera: &mut OrbitCameraState,
+    target_position: Vec3,
+    parent_position: Vec3,
+) {
+    orient_camera_toward_direction(orbit_camera, target_position - parent_position);
+}
+
+fn orient_camera_toward_direction(orbit_camera: &mut OrbitCameraState, direction: Vec3) {
+    let direction = (direction + Vec3::Y * 0.18).normalize_or_zero();
+    if direction.length_squared() > 0.0 {
+        orbit_camera.yaw = direction.x.atan2(direction.z);
+        orbit_camera.pitch = direction
             .y
             .clamp(-1.0, 1.0)
             .asin()
@@ -486,6 +524,69 @@ mod tests {
         assert!(camera.yaw.is_finite());
         assert!(camera.pitch.is_finite());
         assert!((MIN_PITCH..=MAX_PITCH).contains(&camera.pitch));
+    }
+
+    #[test]
+    fn parent_body_index_resolves_each_moon_to_its_planet() {
+        let index_of = |name: &str| BODIES.iter().position(|b| b.display_name == name).unwrap();
+
+        for (moon, planet) in [
+            ("Moon", "Earth"),
+            ("Io", "Jupiter"),
+            ("Europa", "Jupiter"),
+            ("Ganymede", "Jupiter"),
+            ("Callisto", "Jupiter"),
+            ("Charon", "Pluto"),
+        ] {
+            assert_eq!(
+                parent_body_index(index_of(moon)),
+                Some(index_of(planet)),
+                "{moon} should resolve to {planet}"
+            );
+        }
+    }
+
+    #[test]
+    fn parent_body_index_is_none_for_non_moons() {
+        for name in ["Sun", "Earth", "Jupiter"] {
+            let index = BODIES.iter().position(|b| b.display_name == name).unwrap();
+            assert_eq!(parent_body_index(index), None, "{name} has no parent");
+        }
+    }
+
+    #[test]
+    fn orient_camera_away_from_parent_keeps_the_planet_in_view() {
+        let moon_position = Vec3::new(100.0, 0.0, 0.0);
+        let planet_position = Vec3::new(99.5, 0.0, 0.0);
+        let mut camera = OrbitCameraState {
+            mode: CameraMode::Orbit,
+            yaw: 0.0,
+            pitch: 0.0,
+            distance: 10.0,
+            min_distance: 1.0,
+            max_distance: 100.0,
+            target: moon_position,
+            flight: None,
+            free_position: Vec3::ZERO,
+            free_yaw: 0.0,
+            free_pitch: 0.0,
+        };
+
+        orient_camera_away_from_parent(&mut camera, moon_position, planet_position);
+
+        assert!(camera.yaw.is_finite());
+        assert!(camera.pitch.is_finite());
+        assert!((MIN_PITCH..=MAX_PITCH).contains(&camera.pitch));
+
+        // The planet should sit almost exactly along the camera's gaze toward
+        // the moon (i.e. visible behind it), not off to the side.
+        let camera_position = orbit_camera_world_position(&camera);
+        let to_moon = (moon_position - camera_position).normalize();
+        let to_planet = (planet_position - camera_position).normalize();
+        assert!(
+            to_moon.dot(to_planet) > 0.99,
+            "expected planet roughly behind the moon in view, to_moon={to_moon:?} to_planet={to_planet:?}"
+        );
     }
 
     #[test]
