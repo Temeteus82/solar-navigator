@@ -25,14 +25,19 @@ cargo run --release
 
 ```bash
 cargo fmt --check
-cargo check --all-targets
-cargo clippy --all-targets -- -D warnings
-cargo test --all-targets
+cargo check --locked --all-targets
+cargo clippy --locked --all-targets -- -D warnings
+cargo test --locked --all-targets
 
-cargo check --all-targets --no-default-features
-cargo clippy --all-targets --no-default-features -- -D warnings
-cargo test --all-targets --no-default-features
+cargo check --locked --all-targets --no-default-features
+cargo clippy --locked --all-targets --no-default-features -- -D warnings
+cargo test --locked --all-targets --no-default-features
 ```
+
+`--locked` makes cargo fail instead of silently re-resolving `Cargo.lock` when it
+doesn't exactly match `Cargo.toml`. If a command fails with a `--locked` error, that
+means a dependency change is genuinely needed — run the same command without
+`--locked` once, review the `Cargo.lock` diff, and commit it deliberately.
 
 ### Run a single test
 
