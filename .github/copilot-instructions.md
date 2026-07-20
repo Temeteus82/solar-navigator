@@ -6,7 +6,7 @@ coding agents. The human author directs and reviews; no manual code is written. 
 clean, idiomatic Rust that future agents can extend with minimal context.
 
 ## Tech Stack
-- Rust 2024 edition · Bevy 0.18.1 ECS · bevy_egui · wgpu v27 (Metal/Vulkan/DX12)
+- Rust 2024 edition · Bevy 0.19 ECS · bevy_egui · wgpu v29 (Metal/Vulkan/DX12)
 - `rust-spice` (optional `spice` Cargo feature) — NAIF CSPICE ephemerides
 - `reqwest` — NASA JPL Horizons HTTP queries
 - Custom WGSL shaders: atmosphere halo (`assets/shaders/planet_atmosphere.wgsl`) and
@@ -25,7 +25,7 @@ src/
     camera.rs      — Update: orbit + free-fly cameras (F toggles), fly-to animation, body tracking
     render.rs      — Update: solar lighting, visibility toggles, window title
     asteroids.rs   — Update: procedural asteroid belt (Keplerian swarm)
-    materials.rs   — PlanetAtmosphereMaterial + PlanetRingMaterial (Bevy ExtendedMaterial + WGSL)
+    materials.rs   — PlanetAtmosphereMaterial + PlanetRingMaterial (custom Bevy Material + WGSL)
     ui.rs          — egui side panel (target search, sim controls, body list)
     util.rs        — asset resolution, cubemap conversion, format helpers
 ```
