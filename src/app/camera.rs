@@ -471,11 +471,72 @@ fn orient_camera_away_from_parent(
     target_position: Vec3,
     parent_position: Vec3,
 ) {
-    orient_camera_toward_direction(orbit_camera, target_position - parent_position);
+    // `moon_view_direction` already carries the elevation bias, so the angles
+    // are set directly rather than through `orient_camera_toward_direction`
+    // (which would apply the bias a second time and pull the camera back off
+    // the lit side).
+    set_orbit_angles(
+        orbit_camera,
+        moon_view_direction(target_position, parent_position),
+    );
 }
 
+/// Smallest fraction of the moon's camera-facing hemisphere that must be lit,
+/// expressed as the cosine between the view direction and the Sun direction.
+/// 0.35 leaves roughly two thirds of the visible disc in daylight — enough to
+/// read the surface texture while still allowing a pronounced terminator.
+const MIN_SUNLIT_VIEW_DOT: f32 = 0.35;
+
+/// Viewing direction for a moon: anti-parent (so the planet sits behind it),
+/// rotated toward the Sun only as far as needed to light the visible face.
+///
+/// Anti-parent alone is a coin flip on illumination — half of every moon's
+/// orbit has its anti-planet hemisphere in shadow, and flying there frames a
+/// black disc against black space (Europa at a ~168° phase angle is the case
+/// that surfaced this). Rotating by the *minimum* angle keeps the parent as
+/// close to frame as the lighting allows, and leaves an already-lit anti-parent
+/// view untouched.
+fn moon_view_direction(target_position: Vec3, parent_position: Vec3) -> Vec3 {
+    // The elevation bias is folded in up front: it is a fixed offset against a
+    // moon's small orbital radius (for Charon it dominates outright), so
+    // applying it afterwards would tilt the camera back off the lit side.
+    let offset = (target_position - parent_position) + Vec3::Y * ELEVATION_BIAS;
+    let Some(anti_parent) = offset.try_normalize() else {
+        return offset;
+    };
+    // The Sun sits at the scene origin, so this points from the moon to it.
+    let Some(sunward) = (-target_position).try_normalize() else {
+        return offset;
+    };
+
+    let lit_dot = anti_parent.dot(sunward);
+    if lit_dot >= MIN_SUNLIT_VIEW_DOT {
+        return offset;
+    }
+
+    // Rotate within the anti-parent/sunward plane. When the two are exactly
+    // opposed the cross product vanishes and any perpendicular axis will do.
+    let axis = anti_parent
+        .cross(sunward)
+        .try_normalize()
+        .unwrap_or_else(|| anti_parent.any_orthonormal_vector());
+    let correction = lit_dot.clamp(-1.0, 1.0).acos() - MIN_SUNLIT_VIEW_DOT.acos();
+    (Quat::from_axis_angle(axis, correction) * anti_parent) * offset.length()
+}
+
+/// Nudge that lifts the camera slightly above the ecliptic so bodies are seen
+/// from a shallow angle rather than dead-on edge. Absolute, not proportional:
+/// negligible against a planet's heliocentric distance, meaningful against a
+/// moon's orbital radius.
+const ELEVATION_BIAS: f32 = 0.18;
+
 fn orient_camera_toward_direction(orbit_camera: &mut OrbitCameraState, direction: Vec3) {
-    let direction = (direction + Vec3::Y * 0.18).normalize_or_zero();
+    set_orbit_angles(orbit_camera, direction + Vec3::Y * ELEVATION_BIAS);
+}
+
+/// Points the orbit camera along `direction` (already biased) from its target.
+fn set_orbit_angles(orbit_camera: &mut OrbitCameraState, direction: Vec3) {
+    let direction = direction.normalize_or_zero();
     if direction.length_squared() > 0.0 {
         orbit_camera.yaw = direction.x.atan2(direction.z);
         orbit_camera.pitch = direction
@@ -501,6 +562,71 @@ mod tests {
         assert_eq!(compute_target_distance_for_body(0.001), 0.25);
         assert_eq!(compute_target_distance_for_body(2.0), 24.0);
         assert_eq!(compute_target_distance_for_body(20.0), 120.0);
+    }
+
+    #[test]
+    fn moon_view_direction_keeps_anti_parent_when_that_side_is_lit() {
+        // Moon on the sunward side of its planet: the anti-parent direction
+        // points back toward the Sun, so that view is already fully lit.
+        let parent = Vec3::new(1000.0, 0.0, 0.0);
+        let target = parent - Vec3::new(2.0, 0.0, 0.0);
+        let biased_anti_parent = (target - parent) + Vec3::Y * ELEVATION_BIAS;
+
+        let direction = moon_view_direction(target, parent);
+
+        // Unrotated: still the plain anti-parent direction plus elevation bias.
+        assert!((direction - biased_anti_parent).length() < 1e-5);
+    }
+
+    #[test]
+    fn moon_view_direction_rotates_toward_sun_when_anti_parent_is_dark() {
+        // Moon on the far side of its planet from the Sun: the anti-parent
+        // direction points straight away from the Sun, so that view is fully
+        // unlit (the Europa case — a black disc against black space).
+        let parent = Vec3::new(1000.0, 0.0, 0.0);
+        let target = parent + Vec3::new(2.0, 0.0, 0.0);
+        let biased = (target - parent) + Vec3::Y * ELEVATION_BIAS;
+        let sunward = (-target).normalize();
+
+        assert!(
+            biased.normalize().dot(sunward) < -0.99,
+            "test setup should start essentially unlit"
+        );
+
+        let direction = moon_view_direction(target, parent);
+
+        // Now lit to the required threshold, and no further.
+        let lit_dot = direction.normalize().dot(sunward);
+        assert!(
+            (lit_dot - MIN_SUNLIT_VIEW_DOT).abs() < 1e-4,
+            "expected minimum rotation to the lit threshold, got dot {lit_dot}"
+        );
+        // Distance from the moon is preserved; only the direction changed.
+        assert!((direction.length() - biased.length()).abs() < 1e-4);
+    }
+
+    #[test]
+    fn moon_view_direction_lights_a_moon_whose_orbit_is_dwarfed_by_the_bias() {
+        // Charon sits ~0.03 scene units from Pluto, far less than the fixed
+        // elevation bias — the correction still has to reach the threshold.
+        let parent = Vec3::new(4946.0, -643.0, 7359.0);
+        let target = parent + Vec3::new(0.0, 0.0, 0.033);
+        let sunward = (-target).normalize();
+
+        let lit_dot = moon_view_direction(target, parent).normalize().dot(sunward);
+
+        assert!(
+            lit_dot >= MIN_SUNLIT_VIEW_DOT - 1e-4,
+            "expected at least the lit threshold, got dot {lit_dot}"
+        );
+    }
+
+    #[test]
+    fn moon_view_direction_leaves_degenerate_offsets_alone() {
+        // Coincident bodies: only the elevation bias survives, and it must not
+        // produce a NaN direction.
+        let parent = Vec3::new(1000.0, 0.0, 0.0);
+        assert!(moon_view_direction(parent, parent).is_finite());
     }
 
     #[test]
