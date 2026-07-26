@@ -81,9 +81,22 @@ KTX2 (BC7 + mipmaps). The app automatically prefers a same-stem `.ktx2` (or
 .\scripts\compress_textures.ps1
 ```
 
-This requires [AMD Compressonator](https://gpuopen.com/compressonator/) on PATH.
 The script picks the GPU format your platform supports — **BC7 on Windows/Linux,
-ASTC 4x4 on macOS / Apple Silicon** (Metal supports ASTC, not BC7). Either keeps
+ASTC 4x4 on macOS / Apple Silicon** (Metal supports ASTC, not BC7) — and with it
+the encoder it needs on PATH:
+
+| Platform | Format | Encoder |
+| --- | --- | --- |
+| Windows / Linux | BC7 | [AMD Compressonator](https://gpuopen.com/compressonator/) (`compressonatorcli`) |
+| macOS (Apple Silicon) | ASTC 4x4 | [Khronos KTX-Software](https://github.com/KhronosGroup/KTX-Software/releases) (`ktx`) |
+
+Two encoders because AMD ships no macOS build of Compressonator at all — the
+4.5.x releases are Windows and Linux only. On macOS, download
+`KTX-Software-<version>-Darwin-arm64.pkg` from the KTX-Software releases page and
+open it; `ktx` lands in `/usr/local/bin`. Note that `ktx create` reads PNG/EXR but
+not JPEG, so the script decodes each `.jpg` to a temporary PNG (via `sips`) first.
+
+Either format keeps
 textures block-compressed in VRAM (~4x smaller than the RGBA8 the JPEGs decode
 to) and the embedded mip chain removes shimmer on small/distant bodies. The 8K
 Milky Way backdrop is deliberately left as JPEG — its pixels are read on the CPU
