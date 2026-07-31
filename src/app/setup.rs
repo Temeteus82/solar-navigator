@@ -147,23 +147,9 @@ pub(super) fn setup_scene(
         ))
         .id();
 
-    let rim_fill = commands
-        .spawn((
-            PointLight {
-                intensity: 0.0,
-                range: 2_700.0,
-                color: Color::srgb(0.47, 0.55, 0.78),
-                shadow_maps_enabled: false,
-                ..default()
-            },
-            Transform::from_translation(Vec3::new(-150.0, 100.0, 220.0)),
-        ))
-        .id();
-
     commands.insert_resource(LightingRig {
         solar_key,
         sky_fill,
-        rim_fill,
     });
 
     let texture_dir = paths.assets_root.join("textures");

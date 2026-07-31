@@ -268,7 +268,6 @@ pub(super) struct BodyRuntime {
 pub(super) struct LightingRig {
     pub(super) solar_key: Entity,
     pub(super) sky_fill: Entity,
-    pub(super) rim_fill: Entity,
 }
 
 /// Which camera scheme is currently driving the view. Orbit is the default

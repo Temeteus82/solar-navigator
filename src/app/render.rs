@@ -16,9 +16,7 @@ pub(super) fn apply_lighting_preset(
     mut directional_lights: Query<&mut DirectionalLight>,
     mut transforms: Query<&mut Transform>,
 ) {
-    let Ok([mut solar_key, mut rim_fill]) =
-        point_lights.get_many_mut([lighting_rig.solar_key, lighting_rig.rim_fill])
-    else {
+    let Ok(mut solar_key) = point_lights.get_mut(lighting_rig.solar_key) else {
         return;
     };
     let Ok(mut sky_fill) = directional_lights.get_mut(lighting_rig.sky_fill) else {
@@ -59,8 +57,6 @@ pub(super) fn apply_lighting_preset(
     solar_key.shadow_maps_enabled = false;
 
     ambient.brightness = 0.25;
-
-    rim_fill.intensity = 0.0;
 }
 
 #[allow(clippy::type_complexity)]
