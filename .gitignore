@@ -2,6 +2,10 @@
 /dist
 /vendor/cspice
 
+# Written into the repo root by `./scripts/sweep.sh stamp` (cargo-sweep) to mark
+# the current artefacts as in-use. Local state, never committed.
+/sweep.timestamp
+
 # Locally generated GPU-compressed textures (platform-specific block format:
 # BC7 on desktop, ASTC on Apple Silicon). Regenerate with scripts/compress_textures.*
 assets/textures/*.dds
