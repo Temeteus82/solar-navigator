@@ -6,7 +6,8 @@ TEXTURE_DIR="${ROOT_DIR}/assets/textures"
 mkdir -p "${TEXTURE_DIR}"
 
 # FULL_RES=1 downloads heavy science products (hundreds of MB each) and
-# converts them to JPEG for runtime usage.
+# downsamples them to TARGET_WIDTH for runtime usage. Output format follows each
+# destination's extension: lossless PNG for Ceres/Vesta, JPEG for the rest.
 FULL_RES="${FULL_RES:-0}"
 TARGET_WIDTH="${TARGET_WIDTH:-4096}"
 
@@ -38,17 +39,32 @@ fetch_to_tmp() {
   printf "%s" "${dir}/download.${suffix}"
 }
 
-convert_to_jpeg() {
+# Saves in the format implied by $dest's extension. PNG (lossless) is the
+# preferred output; JPEG remains only for the legacy .jpg destinations. Mirrors
+# the PowerShell port's Save-Resized.
+convert_image() {
   local src="$1"
   local dest="$2"
+  # Optional exact height. Sources whose aspect is not exactly 2:1 need to be
+  # squared up rather than merely width-scaled — see the Vesta note below.
+  local exact_height="${3:-}"
+  local format=jpeg
+  if [[ "${dest##*.}" == "png" ]]; then
+    format=png
+  fi
   # Use sips so the script works on stock macOS.
-  sips --resampleWidth "${TARGET_WIDTH}" --setProperty format jpeg "$src" --out "$dest" >/dev/null
+  if [[ -n "$exact_height" ]]; then
+    sips -z "$exact_height" "${TARGET_WIDTH}" --setProperty format "$format" "$src" --out "$dest" >/dev/null
+  else
+    sips --resampleWidth "${TARGET_WIDTH}" --setProperty format "$format" "$src" --out "$dest" >/dev/null
+  fi
 }
 
 copy_or_convert() {
   local url="$1"
   local src_ext="$2"
   local dest="$3"
+  local exact_height="${4:-}"
 
   if [[ -f "$dest" && "$FORCE" != "1" ]]; then
     echo "Skipping $(basename "$dest") (already present, use --force to re-download)"
@@ -59,10 +75,15 @@ copy_or_convert() {
   tmp="$(fetch_to_tmp "$url" "$src_ext")"
   trap 'rm -rf "$(dirname "$tmp")"' RETURN
 
-  if [[ "$src_ext" == "jpg" || "$src_ext" == "jpeg" ]]; then
+  # The straight copy exists for the fast-mode browse renderings, which are
+  # already JPEG at ~1024 wide and need neither conversion nor resampling.
+  # Everything else goes through sips: a .png destination must never end up
+  # holding JPEG bytes, and the full-res sources are tens of thousands of pixels
+  # wide and have to be brought down to TARGET_WIDTH.
+  if [[ ("$src_ext" == "jpg" || "$src_ext" == "jpeg") && "${dest##*.}" == "jpg" ]]; then
     cp "$tmp" "$dest"
   else
-    convert_to_jpeg "$tmp" "$dest"
+    convert_image "$tmp" "$dest" "$exact_height"
   fi
 
   chmod 0644 "$dest"
@@ -71,16 +92,37 @@ copy_or_convert() {
 require_cmd curl
 require_cmd sips
 
+# Ceres comes from the USGS Astrogeology mosaic archive (served from the
+# asc-pds-services S3 bucket): the Dawn FC clear-filter global mosaic at 20 ppd,
+# 7383x3691. It is the source of the committed ceres.png and is used in both
+# modes, since USGS publishes no smaller browse rendering of it.
+CERES_URL='https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Ceres_Dawn_FC_DLR_global_20ppd_Oct2015.tif'
+
+# Vesta's truecolor mosaic exists only on DLR's Dawn GIS server, which is alive
+# and serving (verified 2026-07-31 — an earlier note in this project claiming it
+# had stopped responding was wrong). Two products are published, and only one is
+# usable here:
+#
+#   Vesta_true_color_HAMO-1-2_global.png   26704x13080   equirectangular
+#   Vesta_true_color_HAMO-1-2.png           2405x1202    MOLLWEIDE
+#
+# The compact one is an equal-area ellipse with black corners. Mapped onto a UV
+# sphere it crushes the terrain into a band and smears the projection's dead
+# corners across the globe — that is exactly how the broken map replaced in PR
+# #65 got committed. So Vesta is fetched only in FULL_RES mode, from the global
+# product; fast mode leaves the committed vesta.png alone.
+#
+# That mosaic is 26704x13080 (~2.042:1), not 2:1, so it is squared up to an
+# exact 4096x2048 rather than merely width-scaled: the equirectangular mapping
+# assumes 2:1, and 4096x2006 would leave a height that is not 4-aligned, which
+# compress_textures.sh would then shrink to 2004 and drift further. Same
+# normalisation the committed map got in PR #65.
+VESTA_GLOBAL_URL='https://dawngis.dlr.de/data/Vesta/mosaics/HAMO/truecolor/Vesta_true_color_HAMO-1-2_global.png'
+
 if [[ "$FULL_RES" == "1" ]]; then
   echo "Downloading FULL-RES science mosaics (large files)..."
-  copy_or_convert \
-    "https://dawngis.dlr.de/data/Ceres/mosaics/HAMO/clear/Ceres_HAMO_mosaic_global.png" \
-    "png" \
-    "${TEXTURE_DIR}/ceres.jpg"
-  copy_or_convert \
-    "https://dawngis.dlr.de/data/Vesta/mosaics/HAMO/truecolor/Vesta_true_color_HAMO-1-2_global.png" \
-    "png" \
-    "${TEXTURE_DIR}/vesta.jpg"
+  copy_or_convert "$CERES_URL" "tif" "${TEXTURE_DIR}/ceres.png"
+  copy_or_convert "$VESTA_GLOBAL_URL" "png" "${TEXTURE_DIR}/vesta.png" 2048
   copy_or_convert \
     "https://planetarymaps.usgs.gov/mosaic/Pluto_NewHorizons_Global_Mosaic_300m_Jul2017_8bit.tif" \
     "tif" \
@@ -111,14 +153,10 @@ if [[ "$FULL_RES" == "1" ]]; then
     "${TEXTURE_DIR}/callisto.jpg"
 else
   echo "Downloading compact science textures (fast mode)..."
-  copy_or_convert \
-    "https://dawngis.dlr.de/data/Ceres/mosaics/HAMO/clear/Ceres_HAMO_mosaic_preview.png" \
-    "png" \
-    "${TEXTURE_DIR}/ceres.jpg"
-  copy_or_convert \
-    "https://dawngis.dlr.de/data/Vesta/mosaics/HAMO/truecolor/Vesta_true_color_HAMO-1-2.png" \
-    "png" \
-    "${TEXTURE_DIR}/vesta.jpg"
+  copy_or_convert "$CERES_URL" "tif" "${TEXTURE_DIR}/ceres.png"
+  echo "Skipping vesta.png (only the Mollweide-projected preview is published at"
+  echo "  this size; re-run with FULL_RES=1 for the equirectangular mosaic, or"
+  echo "  restore the committed map with \`git restore assets/textures/vesta.png\`)"
   copy_or_convert \
     "https://astrogeology.usgs.gov/ckan/dataset/a5f1b7f4-9822-4697-a201-e23ef4bd3e16/resource/96be2aa1-f384-4a9f-9458-a8431a0e7956/download/pluto_newhorizons_global_mosaic_300m_jul2017_1024.jpg" \
     "jpg" \
@@ -146,12 +184,14 @@ else
     "${TEXTURE_DIR}/callisto.jpg"
 fi
 
-echo "Science textures saved:"
-echo "  ${TEXTURE_DIR}/ceres.jpg"
-echo "  ${TEXTURE_DIR}/vesta.jpg"
-echo "  ${TEXTURE_DIR}/pluto.jpg"
-echo "  ${TEXTURE_DIR}/charon.jpg"
-echo "  ${TEXTURE_DIR}/io.jpg"
-echo "  ${TEXTURE_DIR}/europa.jpg"
-echo "  ${TEXTURE_DIR}/ganymede.jpg"
-echo "  ${TEXTURE_DIR}/callisto.jpg"
+# List what is actually on disk rather than what the script hoped to write —
+# fast mode deliberately skips Vesta, so a fixed list would claim a file that
+# may not be there.
+echo "Science textures present:"
+for name in ceres.png vesta.png pluto.jpg charon.jpg io.jpg europa.jpg ganymede.jpg callisto.jpg; do
+  if [[ -f "${TEXTURE_DIR}/${name}" ]]; then
+    echo "  ${TEXTURE_DIR}/${name}"
+  else
+    echo "  ${TEXTURE_DIR}/${name} (missing)"
+  fi
+done
