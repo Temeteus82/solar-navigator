@@ -30,12 +30,26 @@ fi
 mkdir -p "${VENDOR_DIR}"
 rm -rf "${CSPICE_DIR}"
 
+# naif.jpl.nasa.gov is a single point of failure for every SPICE-mode CI job,
+# and a bare fetch turns one transient connection failure into a red build. Cap
+# each attempt with --connect-timeout (an unreachable host otherwise hangs for
+# over two minutes before giving up) and retry a few times.
+#
+# curl's plain --retry only covers timeouts and 4xx/5xx responses, not a
+# refused connection; --retry-all-errors closes that gap but has only existed
+# since curl 7.71 (2020) and older curls abort on the unknown flag rather than
+# ignoring it. Probe for it so this script keeps working on long-lived distros
+# that still ship 7.6x.
 if command -v curl >/dev/null 2>&1; then
   echo "Downloading Linux x86_64 CSPICE toolkit..."
-  curl -fL "${URL}" -o "${ARCHIVE_Z}"
+  CURL_RETRY_FLAGS=(--connect-timeout 30 --retry 5 --retry-delay 5)
+  if curl --help all 2>/dev/null | grep -q -- '--retry-all-errors'; then
+    CURL_RETRY_FLAGS+=(--retry-all-errors)
+  fi
+  curl -fL "${CURL_RETRY_FLAGS[@]}" "${URL}" -o "${ARCHIVE_Z}"
 elif command -v wget >/dev/null 2>&1; then
   echo "Downloading Linux x86_64 CSPICE toolkit..."
-  wget -O "${ARCHIVE_Z}" "${URL}"
+  wget --timeout=30 --tries=5 --waitretry=5 -O "${ARCHIVE_Z}" "${URL}"
 else
   echo "Neither curl nor wget is available; cannot download ${URL}"
   exit 1

@@ -17,7 +17,14 @@ cd "${VENDOR_DIR}"
 
 if [[ ! -f cspice.tar.Z ]]; then
   echo "Downloading arm64 CSPICE toolkit..."
-  curl -fL "${URL}" -o cspice.tar.Z
+  # See setup_cspice_linux_x86_64.sh for why these retry flags are here, and
+  # why --retry-all-errors is probed rather than passed unconditionally — the
+  # system curl on macOS 11, which Apple Silicon can still run, predates it.
+  CURL_RETRY_FLAGS=(--connect-timeout 30 --retry 5 --retry-delay 5)
+  if curl --help all 2>/dev/null | grep -q -- '--retry-all-errors'; then
+    CURL_RETRY_FLAGS+=(--retry-all-errors)
+  fi
+  curl -fL "${CURL_RETRY_FLAGS[@]}" "${URL}" -o cspice.tar.Z
 fi
 
 echo "Extracting CSPICE toolkit..."
