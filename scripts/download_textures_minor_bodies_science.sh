@@ -39,25 +39,59 @@ fetch_to_tmp() {
   printf "%s" "${dir}/download.${suffix}"
 }
 
-# Saves in the format implied by $dest's extension. PNG (lossless) is the
-# preferred output; JPEG remains only for the legacy .jpg destinations. Mirrors
-# the PowerShell port's Save-Resized.
+# sips is macOS-only, so requiring it outright made this script impossible to
+# run on Linux — it exited at the dependency check before fetching anything.
+# ImageMagick covers every supported platform; sips stays last so a stock macOS
+# box still works with nothing installed.
+RESIZER=""
+for candidate in magick convert sips; do
+  if command -v "$candidate" >/dev/null 2>&1; then
+    RESIZER="$candidate"
+    break
+  fi
+done
+
+# Saves in the format implied by $dest's extension — both ImageMagick and sips
+# infer it from there. PNG (lossless) is the preferred output; JPEG remains only
+# for the legacy .jpg destinations. Mirrors the PowerShell port's Save-Resized.
 convert_image() {
   local src="$1"
   local dest="$2"
   # Optional exact height. Sources whose aspect is not exactly 2:1 need to be
   # squared up rather than merely width-scaled — see the Vesta note below.
   local exact_height="${3:-}"
-  local format=jpeg
-  if [[ "${dest##*.}" == "png" ]]; then
-    format=png
-  fi
-  # Use sips so the script works on stock macOS.
-  if [[ -n "$exact_height" ]]; then
-    sips -z "$exact_height" "${TARGET_WIDTH}" --setProperty format "$format" "$src" --out "$dest" >/dev/null
-  else
-    sips --resampleWidth "${TARGET_WIDTH}" --setProperty format "$format" "$src" --out "$dest" >/dev/null
-  fi
+
+  case "$RESIZER" in
+    magick | convert)
+      # Trailing "!" ignores aspect ratio, matching the sips -z behaviour below.
+      local geometry="${TARGET_WIDTH}x"
+      if [[ -n "$exact_height" ]]; then
+        geometry="${TARGET_WIDTH}x${exact_height}!"
+      fi
+      # ImageMagick's PNG coder picks its own colour type on write and collapses
+      # single-channel sources (Ceres, and the greyscale Europa/Callisto
+      # mosaics) to an 8-bit grey PNG — a different pixel format than the
+      # sips-produced maps these replace, and than what compress_textures.*
+      # hands the BC7/ASTC encoders. The PNG32: prefix pins 8-bit RGBA; -type
+      # TrueColor does not, because the coder re-detects afterwards.
+      if [[ "${dest##*.}" == "png" ]]; then
+        "$RESIZER" "$src" -resize "$geometry" -colorspace sRGB "PNG32:${dest}"
+      else
+        "$RESIZER" "$src" -resize "$geometry" -colorspace sRGB -type TrueColor "$dest"
+      fi
+      ;;
+    sips)
+      local format=jpeg
+      if [[ "${dest##*.}" == "png" ]]; then
+        format=png
+      fi
+      if [[ -n "$exact_height" ]]; then
+        sips -z "$exact_height" "${TARGET_WIDTH}" --setProperty format "$format" "$src" --out "$dest" >/dev/null
+      else
+        sips --resampleWidth "${TARGET_WIDTH}" --setProperty format "$format" "$src" --out "$dest" >/dev/null
+      fi
+      ;;
+  esac
 }
 
 copy_or_convert() {
@@ -90,7 +124,10 @@ copy_or_convert() {
 }
 
 require_cmd curl
-require_cmd sips
+if [[ -z "$RESIZER" ]]; then
+  echo "Missing an image resizer: install ImageMagick (magick/convert), or run on macOS where sips is built in." >&2
+  exit 1
+fi
 
 # Ceres comes from the USGS Astrogeology mosaic archive (served from the
 # asc-pds-services S3 bucket): the Dawn FC clear-filter global mosaic at 20 ppd,

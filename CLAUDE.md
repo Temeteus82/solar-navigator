@@ -96,12 +96,19 @@ cargo install cargo-sweep
 ./scripts/setup_cspice_linux_x86_64.sh
 ./scripts/download_spice_kernels.sh
 ./scripts/download_textures_solar_system_scope.sh
+./scripts/download_textures_minor_bodies_science.sh
 
 # macOS (arm64)
 ./scripts/setup_cspice_macos_arm64.sh
 ./scripts/download_spice_kernels.sh
 ./scripts/download_textures_solar_system_scope.sh
+./scripts/download_textures_minor_bodies_science.sh
 ```
+
+`download_textures_minor_bodies_science.sh` needs an image resizer: ImageMagick
+(`magick`, or the older `convert`) on Linux, or nothing extra on macOS, where it falls back
+to the built-in `sips`. All three download scripts skip files that already exist — pass
+`--force` to re-fetch.
 
 ```powershell
 # Windows (x86_64) — native PowerShell, no bash required
@@ -203,15 +210,29 @@ At runtime `util::resolve_assets_root` checks in order:
 The planet/body **source `.jpg`/`.png` textures _are_ committed** to the repo and tracked
 in git (since the initial commit). Only the locally generated GPU-compressed `.ktx2`/`.dds`
 files are gitignored. So if the `assets/textures/*` maps go missing, restore them instantly
-with `git restore assets/textures/` — no download needed. **SPICE kernels, by contrast, are
-never bundled** — download them with `scripts/download_spice_kernels.*`. Missing textures
-degrade gracefully to the body's fallback color.
+with `git restore assets/textures/` — no download needed. **The SPICE kernels in
+`assets/spice/` are committed too** (`de440s.bsp`, `naif0012.tls`, `pck00011.tpc`,
+`gm_de440.tpc`), so `scripts/download_spice_kernels.*` is only needed to refresh them —
+re-running it reproduces the committed files byte for byte (verified 2026-08-01). Missing
+textures degrade gracefully to the body's fallback color.
 
 The download scripts (`download_textures_solar_system_scope.*`) exist for the original
 fetch, but since the planet maps now live in git, `git restore` is the normal way to
-recover them. **The Solar System Scope endpoint is also currently 403-blocked** (verified
-2026-06: returns Forbidden even with a browser User-Agent), so re-downloading is not an
-option right now regardless.
+recover them. The Solar System Scope endpoint **is reachable again** — the earlier note
+here claiming a 403 block was true in 2026-06 but no longer is (verified 2026-08-01: plain
+`curl`, no User-Agent spoofing needed).
+
+Two traps live in that endpoint, both already handled by the scripts — do not "simplify"
+them back out:
+
+- The **`8k_` prefix is a product name, not a resolution.** `8k_sun`, `8k_jupiter` and
+  `8k_saturn` are served at 4096×2048, not 8192×4096. The per-body comments in the scripts
+  record the resolution each URL actually returns, and those match the committed maps.
+- **Unknown texture names soft-404**: the site answers HTTP 200 with an HTML error page
+  instead of a 404, so `curl -f` never fires and the HTML would be written into a `.jpg`.
+  `8k_uranus.jpg` and `8k_neptune.jpg` do exactly this — there is no 8k product for those
+  two, which is why they stay on `2k_`. Both scripts download to a temp file and verify the
+  magic bytes before moving it into place.
 
 Body surface textures are loaded through `util::resolve_texture_load_path`, which prefers a same-stem GPU-compressed container (`.ktx2` → `.dds` → the configured `.jpg`/`.png`) when present. `scripts/compress_textures.*` encode the downloaded maps into block-compressed, mipmapped KTX2; both the `ktx2` and `dds` Bevy loaders read raw BCn/ASTC (no Basis transcoder), so the `zstd_rust` backend keeps the portable build free of native deps. The 8K Milky Way backdrop stays uncompressed because its pixels are read CPU-side to build the environment cubemap. The block format — and with it the encoder — is chosen per platform by `compress_textures.*`: **BC7 on Windows/Linux desktop GPUs via AMD Compressonator (`compressonatorcli`), ASTC 4×4 on Apple Silicon via Khronos KTX-Software (`ktx`)**. Metal supports ASTC, not BC7, and AMD ships no macOS build of Compressonator at all (4.5.x is Windows + Linux only), so macOS needs the other tool regardless. `ktx create` reads PNG/EXR but not JPEG, so the shell script decodes each `.jpg` to a temp PNG (`sips`) before encoding. Because these compressed containers are generated locally per machine and never committed (only the source `.jpg`/`.png` maps are), each platform only ever holds its own format and the format-blind loader needs no platform logic. A single cross-platform asset set would instead need Basis Universal (UASTC), which the project avoids for its C++ build dependency.
 
