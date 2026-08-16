@@ -547,7 +547,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         // 15× physical radius at 250 AU/unit; orbits Jupiter at 0.704 scene units.
         visual_radius: 0.046,
         color: [0.88, 0.65, 0.28, 1.0],
-        texture_file: "io.jpg",
+        texture_file: "io.png",
         cloud_texture: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(1.769138),
         mesh_subdivisions: 48,
@@ -569,7 +569,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         // 15× physical radius at 250 AU/unit; orbits Jupiter at 1.12 scene units.
         visual_radius: 0.039,
         color: [0.94, 0.91, 0.84, 1.0],
-        texture_file: "europa.jpg",
+        texture_file: "europa.png",
         cloud_texture: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(3.551181),
         mesh_subdivisions: 44,
@@ -591,7 +591,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         // 15× physical radius at 250 AU/unit; orbits Jupiter at 1.79 scene units.
         visual_radius: 0.066,
         color: [0.68, 0.65, 0.60, 1.0],
-        texture_file: "ganymede.jpg",
+        texture_file: "ganymede.png",
         cloud_texture: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(7.154553),
         mesh_subdivisions: 52,
@@ -613,7 +613,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         // 15× physical radius at 250 AU/unit; orbits Jupiter at 3.15 scene units.
         visual_radius: 0.060,
         color: [0.46, 0.44, 0.42, 1.0],
-        texture_file: "callisto.jpg",
+        texture_file: "callisto.png",
         cloud_texture: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(16.689018),
         mesh_subdivisions: 48,
@@ -703,7 +703,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         // (Pluto–Charon orbit is only 0.033 scene units at 250 AU/unit).
         visual_radius: 0.018,
         color: [0.82, 0.76, 0.68, 1.0],
-        texture_file: "pluto.jpg",
+        texture_file: "pluto.png",
         cloud_texture: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(-6.38723),
         mesh_subdivisions: 48,
@@ -725,7 +725,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         // Capped below 15× physical to keep separation from Pluto.
         visual_radius: 0.009,
         color: [0.74, 0.74, 0.72, 1.0],
-        texture_file: "charon.jpg",
+        texture_file: "charon.png",
         cloud_texture: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(-6.38723),
         mesh_subdivisions: 36,

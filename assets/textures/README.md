@@ -19,10 +19,12 @@ Additional optional textures:
 
 - `milky_way_8k.jpg` (equirectangular sky texture, useful for a skybox/background sphere)
 - `sun_2k_backup.jpg` (backup of the older lower-resolution sun map)
-- `ceres.jpg` (Dawn Ceres mosaic)
-- `vesta.jpg` (Dawn Vesta mosaic)
-- `pluto.jpg` (New Horizons Pluto mosaic)
-- `charon.jpg` (New Horizons Charon mosaic)
+- `ceres.png` (Dawn Ceres mosaic)
+- `vesta.png` (Dawn Vesta mosaic)
+- `pluto.png` (New Horizons Pluto mosaic)
+- `charon.png` (New Horizons Charon mosaic)
+- `io.png`, `europa.png`, `ganymede.png`, `callisto.png` (Galilean moon mosaics;
+  Europa and Callisto are greyscale — USGS publishes no colour map of either)
 
 ## Auto-download helper
 
@@ -53,7 +55,7 @@ Minor-body science textures:
 .\scripts\download_textures_minor_bodies_science.ps1
 ```
 
-Heavy full-resolution source products (converted locally to JPEG):
+Heavy full-resolution source products (converted locally to lossless PNG):
 
 ```bash
 # macOS / Linux
