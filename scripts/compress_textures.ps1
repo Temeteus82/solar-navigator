@@ -97,7 +97,7 @@ function Get-AlignedSource([string]$path) {
 # lower-resolution sun backup, and the ring texture (setup.rs loads
 # saturn_ring.png directly, not via resolve_texture_load_path, so a .ktx2
 # would never be picked up).
-$skip = @('milky_way_8k.jpg', 'sun_2k_backup.jpg', 'saturn_ring.png')
+$skip = @('milky_way_8k.png', 'sun_2k_backup.jpg', 'saturn_ring.png')
 
 $sources = Get-ChildItem -Path (Join-Path $textureDir '*') -Include '*.jpg', '*.png' |
     Where-Object { $skip -notcontains $_.Name }
