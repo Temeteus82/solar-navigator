@@ -6,8 +6,8 @@ TEXTURE_DIR="${ROOT_DIR}/assets/textures"
 mkdir -p "${TEXTURE_DIR}"
 
 # FULL_RES=1 downloads heavy science products (hundreds of MB each) and
-# downsamples them to TARGET_WIDTH for runtime usage. Output format follows each
-# destination's extension: lossless PNG for Ceres/Vesta, JPEG for the rest.
+# downsamples them to TARGET_WIDTH for runtime usage. Everything is written as
+# lossless PNG.
 FULL_RES="${FULL_RES:-0}"
 TARGET_WIDTH="${TARGET_WIDTH:-4096}"
 
@@ -51,9 +51,8 @@ for candidate in magick convert sips; do
   fi
 done
 
-# Saves in the format implied by $dest's extension — both ImageMagick and sips
-# infer it from there. PNG (lossless) is the preferred output; JPEG remains only
-# for the legacy .jpg destinations. Mirrors the PowerShell port's Save-Resized.
+# Always writes lossless PNG — every destination in this script is .png.
+# Mirrors the PowerShell port's Save-Resized.
 convert_image() {
   local src="$1"
   local dest="$2"
@@ -69,32 +68,24 @@ convert_image() {
         geometry="${TARGET_WIDTH}x${exact_height}!"
       fi
       # ImageMagick's PNG coder picks its own colour type on write and collapses
-      # single-channel sources (Ceres, and the greyscale Europa/Callisto
-      # mosaics) to an 8-bit grey PNG — a different pixel format than the
-      # sips-produced maps these replace, and than what compress_textures.*
-      # hands the BC7/ASTC encoders. The PNG32: prefix pins 8-bit RGBA; -type
-      # TrueColor does not, because the coder re-detects afterwards.
-      if [[ "${dest##*.}" == "png" ]]; then
-        "$RESIZER" "$src" -resize "$geometry" -colorspace sRGB "PNG32:${dest}"
-      else
-        "$RESIZER" "$src" -resize "$geometry" -colorspace sRGB -type TrueColor "$dest"
-      fi
+      # single-channel sources (Ceres, the greyscale Europa/Callisto mosaics,
+      # Pluto, Charon) to an 8-bit grey PNG — a different pixel format than what
+      # compress_textures.* hands the BC7/ASTC encoders. The PNG32: prefix pins
+      # 8-bit RGBA; -type TrueColor does not, because the coder re-detects
+      # afterwards.
+      "$RESIZER" "$src" -resize "$geometry" -colorspace sRGB "PNG32:${dest}"
       ;;
     sips)
-      local format=jpeg
-      if [[ "${dest##*.}" == "png" ]]; then
-        format=png
-      fi
       if [[ -n "$exact_height" ]]; then
-        sips -z "$exact_height" "${TARGET_WIDTH}" --setProperty format "$format" "$src" --out "$dest" >/dev/null
+        sips -z "$exact_height" "${TARGET_WIDTH}" --setProperty format png "$src" --out "$dest" >/dev/null
       else
-        sips --resampleWidth "${TARGET_WIDTH}" --setProperty format "$format" "$src" --out "$dest" >/dev/null
+        sips --resampleWidth "${TARGET_WIDTH}" --setProperty format png "$src" --out "$dest" >/dev/null
       fi
       ;;
   esac
 }
 
-copy_or_convert() {
+fetch_and_convert() {
   local url="$1"
   local src_ext="$2"
   local dest="$3"
@@ -109,16 +100,11 @@ copy_or_convert() {
   tmp="$(fetch_to_tmp "$url" "$src_ext")"
   trap 'rm -rf "$(dirname "$tmp")"' RETURN
 
-  # The straight copy exists for the fast-mode browse renderings, which are
-  # already JPEG at ~1024 wide and need neither conversion nor resampling.
-  # Everything else goes through sips: a .png destination must never end up
-  # holding JPEG bytes, and the full-res sources are tens of thousands of pixels
-  # wide and have to be brought down to TARGET_WIDTH.
-  if [[ ("$src_ext" == "jpg" || "$src_ext" == "jpeg") && "${dest##*.}" == "jpg" ]]; then
-    cp "$tmp" "$dest"
-  else
-    convert_image "$tmp" "$dest" "$exact_height"
-  fi
+  # Every destination is .png, so even the fast-mode browse renderings — already
+  # JPEG at ~1024 wide — are re-encoded rather than copied: a .png must never end
+  # up holding JPEG bytes. The full-res sources are tens of thousands of pixels
+  # wide and are brought down to TARGET_WIDTH on the way through.
+  convert_image "$tmp" "$dest" "$exact_height"
 
   chmod 0644 "$dest"
 }
@@ -158,74 +144,74 @@ VESTA_GLOBAL_URL='https://dawngis.dlr.de/data/Vesta/mosaics/HAMO/truecolor/Vesta
 
 if [[ "$FULL_RES" == "1" ]]; then
   echo "Downloading FULL-RES science mosaics (large files)..."
-  copy_or_convert "$CERES_URL" "tif" "${TEXTURE_DIR}/ceres.png"
-  copy_or_convert "$VESTA_GLOBAL_URL" "png" "${TEXTURE_DIR}/vesta.png" 2048
-  copy_or_convert \
+  fetch_and_convert "$CERES_URL" "tif" "${TEXTURE_DIR}/ceres.png"
+  fetch_and_convert "$VESTA_GLOBAL_URL" "png" "${TEXTURE_DIR}/vesta.png" 2048
+  fetch_and_convert \
     "https://planetarymaps.usgs.gov/mosaic/Pluto_NewHorizons_Global_Mosaic_300m_Jul2017_8bit.tif" \
     "tif" \
-    "${TEXTURE_DIR}/pluto.jpg"
-  copy_or_convert \
+    "${TEXTURE_DIR}/pluto.png"
+  fetch_and_convert \
     "https://planetarymaps.usgs.gov/mosaic/Charon_NewHorizons_Global_Mosaic_300m_Jul2017_8bit.tif" \
     "tif" \
-    "${TEXTURE_DIR}/charon.jpg"
+    "${TEXTURE_DIR}/charon.png"
   # Galilean moons, USGS Astrogeology global mosaics. Io and Ganymede have
   # published colour-merge products; Europa and Callisto exist only as
   # greyscale mosaics there, so those two render monochrome (no colour
   # equirectangular map of them is published by USGS).
-  copy_or_convert \
+  fetch_and_convert \
     "https://planetarymaps.usgs.gov/mosaic/Io_Galileo_SSI_Global_Mosaic_ClrMerge_1km.tif" \
     "tif" \
-    "${TEXTURE_DIR}/io.jpg"
-  copy_or_convert \
+    "${TEXTURE_DIR}/io.png"
+  fetch_and_convert \
     "https://planetarymaps.usgs.gov/mosaic/Europa_Voyager_GalileoSSI_global_mosaic_500m.tif" \
     "tif" \
-    "${TEXTURE_DIR}/europa.jpg"
-  copy_or_convert \
+    "${TEXTURE_DIR}/europa.png"
+  fetch_and_convert \
     "https://planetarymaps.usgs.gov/mosaic/Ganymede_Voyager_GalileoSSI_Global_ClrMosaic_1435m.tif" \
     "tif" \
-    "${TEXTURE_DIR}/ganymede.jpg"
-  copy_or_convert \
+    "${TEXTURE_DIR}/ganymede.png"
+  fetch_and_convert \
     "https://planetarymaps.usgs.gov/mosaic/Callisto_Voyager_GalileoSSI_global_mosaic_1km.tif" \
     "tif" \
-    "${TEXTURE_DIR}/callisto.jpg"
+    "${TEXTURE_DIR}/callisto.png"
 else
   echo "Downloading compact science textures (fast mode)..."
-  copy_or_convert "$CERES_URL" "tif" "${TEXTURE_DIR}/ceres.png"
+  fetch_and_convert "$CERES_URL" "tif" "${TEXTURE_DIR}/ceres.png"
   echo "Skipping vesta.png (only the Mollweide-projected preview is published at"
   echo "  this size; re-run with FULL_RES=1 for the equirectangular mosaic, or"
   echo "  restore the committed map with \`git restore assets/textures/vesta.png\`)"
-  copy_or_convert \
+  fetch_and_convert \
     "https://astrogeology.usgs.gov/ckan/dataset/a5f1b7f4-9822-4697-a201-e23ef4bd3e16/resource/96be2aa1-f384-4a9f-9458-a8431a0e7956/download/pluto_newhorizons_global_mosaic_300m_jul2017_1024.jpg" \
     "jpg" \
-    "${TEXTURE_DIR}/pluto.jpg"
-  copy_or_convert \
+    "${TEXTURE_DIR}/pluto.png"
+  fetch_and_convert \
     "https://astrogeology.usgs.gov/ckan/dataset/93827f6c-8feb-42b6-98e6-b0ce57c7d2c8/resource/1abf318c-3290-4aa0-932e-a34f32d7f6ad/download/charon_newhorizons_global_mosaic_300m_jul2017_1024.jpg" \
     "jpg" \
-    "${TEXTURE_DIR}/charon.jpg"
+    "${TEXTURE_DIR}/charon.png"
   # 1024-wide browse renderings of the same USGS mosaics used above.
-  copy_or_convert \
+  fetch_and_convert \
     "https://astrogeology.usgs.gov/ckan/dataset/0fc15885-24ee-4d9d-9666-11de0667c10c/resource/73d4c1f7-8c07-4b28-90ea-f47f7531c5ca/download/full.jpg" \
     "jpg" \
-    "${TEXTURE_DIR}/io.jpg"
-  copy_or_convert \
+    "${TEXTURE_DIR}/io.png"
+  fetch_and_convert \
     "https://astrogeology.usgs.gov/ckan/dataset/4080036f-afc5-422e-abe9-1c0c8e4f98ea/resource/3647e7b3-425e-4dcf-951b-cc4a22fb0129/download/europa_voyager_galileossi_global_mosaic_500m_1024.jpg" \
     "jpg" \
-    "${TEXTURE_DIR}/europa.jpg"
-  copy_or_convert \
+    "${TEXTURE_DIR}/europa.png"
+  fetch_and_convert \
     "https://astrogeology.usgs.gov/ckan/dataset/e1422336-3291-4b65-b903-c942d53de073/resource/eb32abd7-fee2-47d1-9f96-9d7d8824cc3a/download/ganymede_voyager_galileossi_global_clrmosaic_1024.jpg" \
     "jpg" \
-    "${TEXTURE_DIR}/ganymede.jpg"
-  copy_or_convert \
+    "${TEXTURE_DIR}/ganymede.png"
+  fetch_and_convert \
     "https://astrogeology.usgs.gov/ckan/dataset/a80abd68-7ed9-440e-829a-76376779164f/resource/ac628525-cb1c-4742-928b-5a0a60f372cd/download/callisto_voyager_galileossi_global_mosaic_1024.jpg" \
     "jpg" \
-    "${TEXTURE_DIR}/callisto.jpg"
+    "${TEXTURE_DIR}/callisto.png"
 fi
 
 # List what is actually on disk rather than what the script hoped to write —
 # fast mode deliberately skips Vesta, so a fixed list would claim a file that
 # may not be there.
 echo "Science textures present:"
-for name in ceres.png vesta.png pluto.jpg charon.jpg io.jpg europa.jpg ganymede.jpg callisto.jpg; do
+for name in ceres.png vesta.png pluto.png charon.png io.png europa.png ganymede.png callisto.png; do
   if [[ -f "${TEXTURE_DIR}/${name}" ]]; then
     echo "  ${TEXTURE_DIR}/${name}"
   else
