@@ -78,7 +78,7 @@ else
     ext="ktx2"
     shopt -s nullglob
     probe_src=""
-    for f in "$texture_dir"/*.jpg; do probe_src="$f"; break; done
+    for f in "$texture_dir"/*.png "$texture_dir"/*.jpg; do probe_src="$f"; break; done
     if [ -n "$probe_src" ]; then
         probe_out="$(mktemp -u).ktx2"
         if ! compressonatorcli "${dest_args[@]}" -miplevels 1 "$probe_src" "$probe_out" >/dev/null 2>&1 \
@@ -201,7 +201,7 @@ encode() {
 # lower-resolution sun backup, and the ring texture (setup.rs loads
 # saturn_ring.png directly, not via resolve_texture_load_path, so a .ktx2
 # would never be picked up).
-skip="milky_way_8k.jpg sun_2k_backup.jpg saturn_ring.png"
+skip="milky_way_8k.png sun_2k_backup.jpg saturn_ring.png"
 
 for src in "$texture_dir"/*.jpg "$texture_dir"/*.png; do
     name="$(basename "$src")"

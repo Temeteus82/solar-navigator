@@ -2,23 +2,23 @@
 
 The app looks for the following files in this folder:
 
-- `sun.jpg`
-- `mercury.jpg`
-- `venus.jpg`
-- `earth.jpg`
-- `moon.jpg`
-- `mars.jpg`
-- `jupiter.jpg`
-- `saturn.jpg`
-- `uranus.jpg`
-- `neptune.jpg`
+- `sun.png`
+- `mercury.png`
+- `venus.png` (plus `venus_clouds.png`)
+- `earth.png`
+- `moon.png`
+- `mars.png`
+- `jupiter.png`
+- `saturn.png`
+- `uranus.png`
+- `neptune.png`
 
 If files are missing, the app falls back to plain colors.
 
 Additional optional textures:
 
-- `milky_way_8k.jpg` (equirectangular sky texture, useful for a skybox/background sphere)
-- `sun_2k_backup.jpg` (backup of the older lower-resolution sun map)
+- `milky_way_8k.png` (equirectangular sky texture, useful for a skybox/background sphere)
+- `sun_2k_backup.jpg` (backup of the older lower-resolution sun map; unused by the app)
 - `ceres.png` (Dawn Ceres mosaic)
 - `vesta.png` (Dawn Vesta mosaic)
 - `pluto.png` (New Horizons Pluto mosaic)
