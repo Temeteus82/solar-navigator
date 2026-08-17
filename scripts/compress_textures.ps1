@@ -20,7 +20,7 @@
 
     The 8K Milky Way backdrop is skipped: its pixels are read on the CPU to
     build the environment cubemap, which cannot come from a block-compressed
-    image. The unused sun_2k_backup.jpg is skipped too.
+    image.
 
     COLOUR NOTE: planet maps are sRGB base-colour textures. After encoding,
     verify in-app that colours look right. If they appear too dark, the output
@@ -93,11 +93,10 @@ function Get-AlignedSource([string]$path) {
     } finally { $img.Dispose() }
 }
 
-# Textures that must NOT be compressed: the CPU-read backdrop, the unused
-# lower-resolution sun backup, and the ring texture (setup.rs loads
-# saturn_ring.png directly, not via resolve_texture_load_path, so a .ktx2
-# would never be picked up).
-$skip = @('milky_way_8k.png', 'sun_2k_backup.jpg', 'saturn_ring.png')
+# Textures that must NOT be compressed: the CPU-read backdrop, and the ring
+# texture (setup.rs loads saturn_ring.png directly, not via
+# resolve_texture_load_path, so a .ktx2 would never be picked up).
+$skip = @('milky_way_8k.png', 'saturn_ring.png')
 
 $sources = Get-ChildItem -Path (Join-Path $textureDir '*') -Include '*.jpg', '*.png' |
     Where-Object { $skip -notcontains $_.Name }

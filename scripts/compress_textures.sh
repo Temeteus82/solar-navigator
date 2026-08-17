@@ -22,8 +22,7 @@
 # shimmer you otherwise get on small/distant bodies.
 #
 # The 8K Milky Way backdrop is skipped: its pixels are read on the CPU to build
-# the environment cubemap, which cannot come from a block-compressed image. The
-# unused sun_2k_backup.jpg is skipped too.
+# the environment cubemap, which cannot come from a block-compressed image.
 #
 # COLOUR NOTE: planet maps are sRGB base-colour textures. The ktx path says so
 # explicitly (ASTC_4x4_SRGB_BLOCK + --assign-tf srgb). After encoding, verify
@@ -197,11 +196,10 @@ encode() {
     fi
 }
 
-# Textures that must NOT be compressed: the CPU-read backdrop, the unused
-# lower-resolution sun backup, and the ring texture (setup.rs loads
-# saturn_ring.png directly, not via resolve_texture_load_path, so a .ktx2
-# would never be picked up).
-skip="milky_way_8k.png sun_2k_backup.jpg saturn_ring.png"
+# Textures that must NOT be compressed: the CPU-read backdrop, and the ring
+# texture (setup.rs loads saturn_ring.png directly, not via
+# resolve_texture_load_path, so a .ktx2 would never be picked up).
+skip="milky_way_8k.png saturn_ring.png"
 
 for src in "$texture_dir"/*.jpg "$texture_dir"/*.png; do
     name="$(basename "$src")"
