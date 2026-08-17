@@ -18,7 +18,6 @@ If files are missing, the app falls back to plain colors.
 Additional optional textures:
 
 - `milky_way_8k.png` (equirectangular sky texture, useful for a skybox/background sphere)
-- `sun_2k_backup.jpg` (backup of the older lower-resolution sun map; unused by the app)
 - `ceres.png` (Dawn Ceres mosaic)
 - `vesta.png` (Dawn Vesta mosaic)
 - `pluto.png` (New Horizons Pluto mosaic)
