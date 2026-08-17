@@ -342,9 +342,9 @@ pub(super) fn setup_scene(
 
     commands.insert_resource(texture_registry);
 
-    let milky_way_path = texture_dir.join("milky_way_8k.jpg");
+    let milky_way_path = texture_dir.join("milky_way_8k.png");
     let starfield_source_texture = if milky_way_path.is_file() {
-        let sky_texture = asset_server.load("textures/milky_way_8k.jpg");
+        let sky_texture = asset_server.load("textures/milky_way_8k.png");
         let sky_mesh = sphere_mesh(&mut meshes, super::types::STARFIELD_RADIUS, 96);
         let sky_material = materials.add(StandardMaterial {
             base_color: Color::WHITE,
