@@ -34,6 +34,23 @@ cd /path/to/solar-navigator
 cargo run --release --no-default-features
 ```
 
+## SPICE Build Prerequisites
+
+The portable build above needs only a Rust toolchain. The SPICE builds additionally
+need **libclang** on every platform — `cspice-sys` generates its FFI bindings with
+`bindgen`, which loads libclang at build time. Install it once:
+
+| Platform | libclang comes from |
+|----------|---------------------|
+| Linux | `clang` (plus the system deps listed in `CLAUDE.md`) |
+| macOS | Xcode Command Line Tools — `xcode-select --install` |
+| Windows | `winget install LLVM.LLVM`, or the `VC.Llvm.Clang` VS component |
+
+Windows also needs the MSVC linker from the Visual Studio Build Tools C++ workload
+(`winget install Microsoft.VisualStudio.2022.BuildTools`, C++ build tools selected).
+If bindgen still can't find libclang after installing, set `LIBCLANG_PATH` to the
+directory holding `libclang.dll` / `libclang.so` / `libclang.dylib`.
+
 ## Quick Start (macOS SPICE Build)
 
 ```bash
