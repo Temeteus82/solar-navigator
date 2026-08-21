@@ -16,6 +16,23 @@ use std::f64::consts::TAU;
 
 const CHARON_TO_PLUTO_MASS_RATIO: f64 = 0.1218;
 
+/// Targets whose scene position is rebuilt from a primary body *after* the
+/// ephemeris pass in `update_body_positions`: `apply_jupiter_moon_positions`
+/// and `apply_pluto_charon_center_positions` overwrite these entries outright.
+/// Any Horizons offset fetched for them is therefore discarded before it can
+/// reach a transform, which is why the sync skips them entirely — see
+/// `setup::horizons_sync_skips_target`.
+pub(super) const RECONSTRUCTED_TARGETS: [&str; 5] =
+    ["IO", "EUROPA", "GANYMEDE", "CALLISTO", "CHARON"];
+
+/// True when `spice_target`'s position is reconstructed from a primary rather
+/// than taken from the ephemeris, making a Horizons correction meaningless.
+pub(super) fn position_is_reconstructed(spice_target: &str) -> bool {
+    RECONSTRUCTED_TARGETS
+        .iter()
+        .any(|target| target.eq_ignore_ascii_case(spice_target))
+}
+
 pub(super) fn keyboard_controls(
     key_input: Res<ButtonInput<KeyCode>>,
     egui_input: Res<EguiWantsInput>,
@@ -156,6 +173,14 @@ fn charon_relative_scene_offset(elapsed_simulation_days: f64, au_to_scene_units:
     tilt.mul_vec3(analytic.as_vec3()).as_dvec3()
 }
 
+/// Galilean moons, with the orbit each is placed on relative to Jupiter.
+const JUPITER_MOON_ORBITS: [(&str, &SatelliteOrbit); 4] = [
+    ("IO", &IO_ORBIT),
+    ("EUROPA", &EUROPA_ORBIT),
+    ("GANYMEDE", &GANYMEDE_ORBIT),
+    ("CALLISTO", &CALLISTO_ORBIT),
+];
+
 fn apply_jupiter_moon_positions(
     scene_positions: &mut [DVec3],
     elapsed_simulation_days: f64,
@@ -166,12 +191,7 @@ fn apply_jupiter_moon_positions(
     };
     let jupiter_pos = scene_positions[jupiter_index];
 
-    for (moon_target, orbit) in &[
-        ("IO", &IO_ORBIT),
-        ("EUROPA", &EUROPA_ORBIT),
-        ("GANYMEDE", &GANYMEDE_ORBIT),
-        ("CALLISTO", &CALLISTO_ORBIT),
-    ] {
+    for (moon_target, orbit) in &JUPITER_MOON_ORBITS {
         let Some(moon_index) = body_index_for_target(moon_target) else {
             continue;
         };
@@ -286,7 +306,7 @@ mod tests {
     use super::{
         CHARON_TO_PLUTO_MASS_RATIO, apply_jupiter_moon_positions,
         apply_pluto_charon_center_positions, body_index_for_target, charon_relative_scene_offset,
-        spin_step_radians,
+        position_is_reconstructed, spin_step_radians,
     };
     use crate::ephemeris::{CALLISTO_ORBIT, IO_ORBIT};
     use bevy::math::DVec3;
@@ -339,6 +359,31 @@ mod tests {
         let xz_radius = (offset.x * offset.x + offset.z * offset.z).sqrt();
         let expected = (CALLISTO_ORBIT.semi_major_axis_km / super::KM_PER_AU) * 250.0;
         assert!((xz_radius - expected).abs() < 1e-9);
+    }
+
+    #[test]
+    fn reconstructed_targets_covers_every_overwritten_body() {
+        // Every body an applier overwrites must be listed, or the Horizons sync
+        // would keep fetching an offset that `update_body_positions` discards.
+        for (moon_target, _) in &super::JUPITER_MOON_ORBITS {
+            assert!(
+                position_is_reconstructed(moon_target),
+                "{moon_target} is overwritten by apply_jupiter_moon_positions but missing from RECONSTRUCTED_TARGETS"
+            );
+        }
+        assert!(
+            position_is_reconstructed("CHARON"),
+            "Charon is overwritten by apply_pluto_charon_center_positions but missing from RECONSTRUCTED_TARGETS"
+        );
+
+        // And every listed target must be a real body, so a rename cannot leave
+        // a dead string silently excluding nothing.
+        for target in super::RECONSTRUCTED_TARGETS {
+            assert!(
+                body_index_for_target(target).is_some(),
+                "{target} is in RECONSTRUCTED_TARGETS but is not a BODIES entry"
+            );
+        }
     }
 
     #[test]
