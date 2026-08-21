@@ -98,7 +98,8 @@ cargo install cargo-sweep
 ./scripts/download_textures_solar_system_scope.sh
 ./scripts/download_textures_minor_bodies_science.sh
 
-# macOS (arm64)
+# macOS (arm64) — install the Xcode Command Line Tools first for libclang
+# (`xcode-select --install`), then:
 ./scripts/setup_cspice_macos_arm64.sh
 ./scripts/download_spice_kernels.sh
 ./scripts/download_textures_solar_system_scope.sh
@@ -111,12 +112,38 @@ to the built-in `sips`. All three download scripts skip files that already exist
 `--force` to re-fetch.
 
 ```powershell
-# Windows (x86_64) — native PowerShell, no bash required
+# Windows (x86_64) — native PowerShell, no bash required. Install the MSVC
+# linker and libclang first (both one-time, and both needed by the SPICE
+# build):
+#   winget install Microsoft.VisualStudio.2022.BuildTools --override `
+#     "--wait --quiet --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+#   winget install LLVM.LLVM
 ./scripts/setup_cspice_windows_x86_64.ps1
 ./scripts/download_spice_kernels.ps1
 ./scripts/download_textures_solar_system_scope.ps1
 ./scripts/download_textures_minor_bodies_science.ps1
 ```
+
+### libclang is required by the SPICE build on every platform
+
+`cspice-sys` generates its FFI bindings with `bindgen` at build time, and bindgen
+loads `libclang` dynamically. Without it the SPICE build fails in the dependency's
+build script, long before any project code is compiled:
+
+```
+error: failed to run custom build command for `cspice-sys v1.0.4`
+  Unable to find libclang: "couldn't find any valid shared libraries matching:
+  ['clang.dll', 'libclang.dll'] ..."
+```
+
+Where it comes from per platform: `clang` from the distro package manager on Linux,
+the Xcode Command Line Tools on macOS, and either `winget install LLVM.LLVM` or the
+`Microsoft.VisualStudio.Component.VC.Llvm.Clang` component on Windows. If bindgen
+still can't find it, point it there explicitly — `LIBCLANG_PATH=C:\Program Files\LLVM\bin`
+on Windows, or the equivalent directory holding `libclang.so`/`libclang.dylib`.
+
+The portable build (`--no-default-features`) needs none of this: it has no
+`cspice-sys` dependency, so it builds with only a Rust toolchain and a linker.
 
 ## Architecture
 
