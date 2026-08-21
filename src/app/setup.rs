@@ -1,4 +1,5 @@
 use super::materials::{PlanetAtmosphereMaterial, PlanetRingMaterial};
+use super::simulation::position_is_reconstructed;
 use super::types::{
     AppPaths, AppStatus, AtmosphereLayer, AtmosphereOf, BODIES, BodyEntity, CLOUD_LAYER_SCALE,
     CloudLayer, CloudOf, EphemerisResource, HorizonsHttpClient, HorizonsSyncResult,
@@ -487,6 +488,22 @@ pub(super) fn poll_horizons_sync_task(
     }
 }
 
+/// Bodies the Horizons sync has nothing useful to say about.
+///
+/// The Sun sits at the origin of the heliocentric frame, so its offset is
+/// meaningless by construction. The reconstructed satellites (Charon and the
+/// Galilean moons) have their scene positions overwritten from their primary
+/// after the ephemeris pass, so an offset fetched for them is discarded before
+/// it reaches a transform — see `simulation::RECONSTRUCTED_TARGETS`.
+///
+/// Skipping them keeps the reported max Δ meaningful: Charon's fallback orbit
+/// is an analytic circle standing in for Pluto, which put it ~53 AU from where
+/// Horizons reports it and made the status line's headline number an inert
+/// figure that masked the real worst case among corrected bodies.
+fn horizons_sync_skips_target(spice_target: &str) -> bool {
+    spice_target.eq_ignore_ascii_case("SUN") || position_is_reconstructed(spice_target)
+}
+
 fn queue_horizons_sync_task(
     app_status: &AppStatus,
     ephemeris: &EphemerisResource,
@@ -507,14 +524,14 @@ fn queue_horizons_sync_task(
     let utc_timestamp = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let target_count = BODIES
         .iter()
-        .filter(|spec| !spec.spice_target.eq_ignore_ascii_case("SUN"))
+        .filter(|spec| !horizons_sync_skips_target(spec.spice_target))
         .count();
 
     let mut targets = Vec::new();
     let mut initial_failures = Vec::new();
 
     for (index, spec) in BODIES.iter().enumerate() {
-        if spec.spice_target.eq_ignore_ascii_case("SUN") {
+        if horizons_sync_skips_target(spec.spice_target) {
             continue;
         }
 
