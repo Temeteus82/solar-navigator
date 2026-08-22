@@ -70,7 +70,7 @@ FULL_RES=1 TARGET_WIDTH=4096 ./scripts/download_textures_minor_bodies_science.sh
 
 After downloading, you can encode the planet/moon maps into GPU block-compressed
 KTX2 (BC7 + mipmaps). The app automatically prefers a same-stem `.ktx2` (or
-`.dds`) over the plain `.jpg` at load time, so this is a drop-in optimisation:
+`.dds`) over the plain `.png` at load time, so this is a drop-in optimisation:
 
 ```bash
 # macOS / Linux
@@ -97,11 +97,11 @@ Two encoders because AMD ships no macOS build of Compressonator at all — the
 open it; `ktx` lands in `/usr/local/bin`. Note that `ktx create` reads PNG/EXR but
 not JPEG, so the script decodes each `.jpg` to a temporary PNG (via `sips`) first.
 
-Either format keeps
-textures block-compressed in VRAM (~4x smaller than the RGBA8 the JPEGs decode
-to) and the embedded mip chain removes shimmer on small/distant bodies. The 8K
-Milky Way backdrop is deliberately left as JPEG — its pixels are read on the CPU
-to build the environment cubemap, which a compressed image can't provide.
+Either format keeps textures block-compressed in VRAM (~4x smaller than the
+RGBA8 the source maps decode to) and the embedded mip chain removes shimmer on
+small/distant bodies. The 8K Milky Way backdrop is deliberately left
+uncompressed — its pixels are read on the CPU to build the environment cubemap,
+which a compressed image can't provide.
 
 Both loaders read raw BCn with no Basis transcoder, so the portable build gains
 no native dependency. If you would rather produce `.dds` with Microsoft's
