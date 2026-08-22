@@ -365,6 +365,16 @@ pub(super) fn setup_scene(
         ));
         sky_texture
     } else {
+        // The fallback is a 2048x1024 procedural star map on the same sky
+        // sphere as the 8K photograph, so a missing backdrop still renders —
+        // just at 1/16th the resolution, which reads as a blurry, wrongly
+        // scaled sky rather than as an error. Say so, or the next person to
+        // rename this file debugs the symptom instead of the cause.
+        warn!(
+            "Milky Way backdrop not found at {}; falling back to the low-resolution \
+             procedural starfield. Restore it with `git restore assets/textures/`.",
+            milky_way_path.display()
+        );
         spawn_fallback_starfield(&mut commands, &mut meshes, &mut materials, &mut images)
     };
 
