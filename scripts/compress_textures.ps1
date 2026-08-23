@@ -93,10 +93,13 @@ function Get-AlignedSource([string]$path) {
     } finally { $img.Dispose() }
 }
 
-# Textures that must NOT be compressed: the CPU-read backdrop, and the ring
-# texture (setup.rs loads saturn_ring.png directly, not via
-# resolve_texture_load_path, so a .ktx2 would never be picked up).
-$skip = @('milky_way_8k.png', 'saturn_ring.png')
+# The one texture that must NOT be compressed: the backdrop's pixels are read
+# on the CPU to build the environment cubemap, and Bevy can only convert
+# uncompressed formats back to RGBA8 (Image::convert -> try_into_dynamic covers
+# R8/Rg8/Rgba8/Bgra8 only). A block-compressed backdrop makes that conversion
+# return None, and sync_environment_lighting_from_sky then silently retries
+# every frame without ever applying the environment map.
+$skip = @('milky_way_8k.png')
 
 $sources = Get-ChildItem -Path (Join-Path $textureDir '*') -Include '*.jpg', '*.png' |
     Where-Object { $skip -notcontains $_.Name }
