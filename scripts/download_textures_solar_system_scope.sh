@@ -10,7 +10,7 @@ BASE_URL="https://www.solarsystemscope.com/textures/download"
 # Existing textures are left alone unless --force is passed, matching the
 # PowerShell port's -Force. The shell script used to overwrite unconditionally,
 # so simply following the documented setup steps on an existing checkout would
-# replace the committed maps without asking.
+# re-download every map without asking.
 FORCE=0
 if [[ "${1:-}" == "--force" ]]; then
   FORCE=1
@@ -18,9 +18,19 @@ fi
 
 # ImageMagick covers every supported platform; sips stays last so a stock macOS
 # box still works with nothing installed. Mirrors the minor-bodies script.
+# `convert` is also the name of Windows' filesystem conversion tool, which sits
+# in PATH under Git Bash and answers -version with "Invalid drive
+# specification". Probe for the ImageMagick banner so that impostor is never
+# selected — otherwise every re-encode fails after the download has already
+# succeeded.
+check_candidate() {
+  command -v "$1" >/dev/null 2>&1 || return 1
+  [[ "$1" != "convert" ]] || "$1" -version 2>&1 | grep -qi imagemagick
+}
+
 CONVERTER=""
 for candidate in magick convert sips; do
-  if command -v "$candidate" >/dev/null 2>&1; then
+  if check_candidate "$candidate"; then
     CONVERTER="$candidate"
     break
   fi
@@ -80,18 +90,20 @@ fetch_texture() {
   echo "Downloaded ${name} (${remote})"
 }
 
-# The resolutions below reproduce the maps committed to assets/textures. This
-# list previously asked for the "2k_" variants of eight bodies that are
-# committed at 4K or 8K, so running the documented setup downgraded them by up
-# to 16x in linear resolution.
+# These textures are the app's only source for these bodies — nothing under
+# assets/textures/ is stored in git — so each entry asks for the largest product
+# that body actually has. An earlier version of this list asked for the "2k_"
+# variants of eight bodies published at 4K or 8K, which downgraded them by up to
+# 16x in linear resolution.
 #
 # Solar System Scope's "8k_" prefix is a product name, not a guarantee: 8k_sun,
-# 8k_jupiter and 8k_saturn are all served at 4096x2048. Uranus and Neptune have
-# no 8k product at all (those names soft-404 into HTML), so they stay on 2k_,
-# which is what their committed maps already are.
+# 8k_jupiter and 8k_saturn are all served at 4096x2048. Uranus, Neptune and the
+# Venus cloud layer have no 8k product at all (those names soft-404 into HTML),
+# so they stay at the largest size that exists.
 fetch_texture 8k_sun.jpg              sun.png          # 4096x2048
 fetch_texture 8k_mercury.jpg          mercury.png      # 8192x4096
 fetch_texture 8k_venus_surface.jpg    venus.png        # 8192x4096
+fetch_texture 4k_venus_atmosphere.jpg venus_clouds.png # 4096x2048 (no 8k product)
 fetch_texture 8k_earth_daymap.jpg     earth.png        # 8192x4096
 fetch_texture 8k_moon.jpg             moon.png         # 8192x4096
 fetch_texture 8k_mars.jpg             mars.png         # 8192x4096

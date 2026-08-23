@@ -1,5 +1,10 @@
 # Planet Textures
 
+**Nothing in this folder is stored in git** except this README — the folder is gitignored,
+so a fresh checkout starts empty and the download scripts below are the only way to fill
+it. Bodies whose texture is missing render in a flat fallback colour (and a missing
+`milky_way_8k.png` also logs a warning at startup).
+
 The app looks for the following files in this folder:
 
 - `sun.png`
@@ -39,8 +44,10 @@ From project root:
 .\scripts\download_textures_solar_system_scope.ps1
 ```
 
-This script pulls textures from Solar System Scope public endpoints.
-Before shipping or redistributing, verify current attribution/license terms.
+This script pulls textures from Solar System Scope public endpoints — every file in the
+first list above, including `venus_clouds.png` (from their `4k_venus_atmosphere` product;
+there is no 8K one) and `milky_way_8k.png`. Before shipping or redistributing, verify
+current attribution/license terms.
 
 Minor-body science textures:
 
@@ -53,6 +60,12 @@ Minor-body science textures:
 # Windows
 .\scripts\download_textures_minor_bodies_science.ps1
 ```
+
+That covers every minor body except **Vesta**: the only equirectangular Vesta mosaic
+published anywhere is a 357 MB DLR product, so `vesta.png` is fetched in full-resolution
+mode only and Vesta renders in its fallback colour until you run it. (The compact Vesta
+product DLR publishes is Mollweide-projected and maps onto a sphere wrong, which is why the
+script refuses to use it.)
 
 Heavy full-resolution source products (converted locally to lossless PNG):
 

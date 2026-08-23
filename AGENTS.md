@@ -182,11 +182,13 @@ At runtime `util::resolve_assets_root` checks in order:
 3. macOS app bundle (`Contents/Resources/assets`)
 4. Compile-time source-tree fallback (`CARGO_MANIFEST_DIR/assets`)
 
-The planet/body source `.jpg`/`.png` textures **are committed** to the repo — restore them
-with `git restore assets/textures/` if they go missing, no download needed. Only the
-locally generated GPU-compressed `.ktx2`/`.dds` files are gitignored (`scripts/compress_textures.*`
-encode them as BC7 on Windows/Linux, ASTC 4×4 on Apple Silicon). SPICE kernels are never
-bundled — download them with `scripts/download_spice_kernels.*`. Missing textures degrade
+The planet/body textures are **not stored in git** — `assets/textures/` is gitignored apart
+from its `README.md`, and a fresh clone starts empty. Fetch them with
+`scripts/download_textures_solar_system_scope.*` and
+`scripts/download_textures_minor_bodies_science.*`; the generated GPU-compressed
+`.ktx2`/`.dds` files (`scripts/compress_textures.*`, BC7 on Windows/Linux, ASTC 4×4 on
+Apple Silicon) are ignored by the same rule. The SPICE kernels under `assets/spice/` **are**
+committed; `scripts/download_spice_kernels.*` only refreshes them. Missing textures degrade
 gracefully to the body's fallback color. See `docs/gpu-profiling.md` to verify compressed
 textures upload correctly and to profile the render pipeline.
 

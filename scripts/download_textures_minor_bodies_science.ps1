@@ -94,13 +94,15 @@ $ceresUrl = 'https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Ceres_Da
 # sphere it crushes the terrain into a band and smears the projection's dead
 # corners across the globe — that is exactly how the broken map replaced in PR
 # #65 got committed. So Vesta is fetched only in -FullRes mode, from the global
-# product; fast mode leaves the committed vesta.png alone.
+# product, which is a 357 MB download. Nothing under assets/textures/ is stored
+# in git, so fast mode simply leaves vesta.png absent and the body renders in
+# its fallback colour.
 #
 # That mosaic is 26704x13080 (~2.042:1), not 2:1, so it is squared up to an
 # exact 4096x2048 rather than merely width-scaled: the equirectangular mapping
 # assumes 2:1, and 4096x2006 would leave a height that is not 4-aligned, which
 # compress_textures would then shrink to 2004 and drift further. Same
-# normalisation the committed map got in PR #65.
+# normalisation applied in PR #65.
 $vestaGlobalUrl ='https://dawngis.dlr.de/data/Vesta/mosaics/HAMO/truecolor/Vesta_true_color_HAMO-1-2_global.png'
 
 # Galilean moons, USGS Astrogeology global mosaics. Io and Ganymede have
@@ -122,8 +124,8 @@ if ($FullRes) {
     Write-Host 'Downloading compact science textures (fast mode)...'
     Get-And-Convert -Url $ceresUrl -SrcExt 'tif' -DestPath (Join-Path $textureDir 'ceres.png')
     Write-Host 'Skipping vesta.png (only the Mollweide-projected preview is published at'
-    Write-Host '  this size; re-run with -FullRes for the equirectangular mosaic, or restore'
-    Write-Host '  the committed map with `git restore assets/textures/vesta.png`)'
+    Write-Host '  this size, and it maps onto a sphere wrong. Vesta renders in its fallback'
+    Write-Host '  colour until you re-run with -FullRes for the 357 MB equirectangular mosaic.)'
     Get-And-Convert -Url 'https://astrogeology.usgs.gov/ckan/dataset/a5f1b7f4-9822-4697-a201-e23ef4bd3e16/resource/96be2aa1-f384-4a9f-9458-a8431a0e7956/download/pluto_newhorizons_global_mosaic_300m_jul2017_1024.jpg' -SrcExt 'jpg' -DestPath (Join-Path $textureDir 'pluto.png')
     Get-And-Convert -Url 'https://astrogeology.usgs.gov/ckan/dataset/93827f6c-8feb-42b6-98e6-b0ce57c7d2c8/resource/1abf318c-3290-4aa0-932e-a34f32d7f6ad/download/charon_newhorizons_global_mosaic_300m_jul2017_1024.jpg' -SrcExt 'jpg' -DestPath (Join-Path $textureDir 'charon.png')
     # 1024-wide browse renderings of the same USGS mosaics used above.

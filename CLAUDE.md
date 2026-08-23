@@ -234,34 +234,52 @@ At runtime `util::resolve_assets_root` checks in order:
 3. macOS app bundle (`Contents/Resources/assets`)
 4. Compile-time source-tree fallback (`CARGO_MANIFEST_DIR/assets`)
 
-The planet/body **source `.jpg`/`.png` textures _are_ committed** to the repo and tracked
-in git (since the initial commit). Only the locally generated GPU-compressed `.ktx2`/`.dds`
-files are gitignored. So if the `assets/textures/*` maps go missing, restore them instantly
-with `git restore assets/textures/` — no download needed. **The SPICE kernels in
-`assets/spice/` are committed too** (`de440s.bsp`, `naif0012.tls`, `pck00011.tpc`,
-`gm_de440.tpc`), so `scripts/download_spice_kernels.*` is only needed to refresh them —
-re-running it reproduces the committed files byte for byte (verified 2026-08-01). Missing
-textures degrade gracefully to the body's fallback color.
+The planet/body **textures are not stored in git**. `assets/textures/` is gitignored apart
+from its `README.md`, so a fresh clone has no maps at all — fetch them with
+`scripts/download_textures_solar_system_scope.*` and
+`scripts/download_textures_minor_bodies_science.*`. Both skip files already on disk; pass
+`--force` / `-Force` to re-fetch. The locally generated GPU-compressed `.ktx2`/`.dds`
+containers fall under the same ignore rule. **The SPICE kernels in `assets/spice/` are
+committed** (`de440s.bsp`, `naif0012.tls`, `pck00011.tpc`, `gm_de440.tpc`), so
+`scripts/download_spice_kernels.*` is only needed to refresh them — re-running it reproduces
+the committed files byte for byte (verified 2026-08-01). Missing textures degrade gracefully
+to the body's fallback color, and a missing Milky Way backdrop additionally logs a warning
+from `setup.rs:setup_scene`.
 
-The download scripts (`download_textures_solar_system_scope.*`) exist for the original
-fetch, but since the planet maps now live in git, `git restore` is the normal way to
-recover them. The Solar System Scope endpoint **is reachable again** — the earlier note
-here claiming a 403 block was true in 2026-06 but no longer is (verified 2026-08-01: plain
-`curl`, no User-Agent spoofing needed).
+Because the scripts are now the only source, every filename the app looks for has to be
+obtainable from them — adding a texture to `BODIES` means adding it to the download scripts
+in the same change. Two entries are not one-to-one with a body name: `venus_clouds.png`
+comes from Solar System Scope's `4k_venus_atmosphere.jpg` (there is no 8K product), and
+`vesta.png` is fetched only in `FULL_RES=1` / `-FullRes` mode, because the only
+equirectangular Vesta mosaic published anywhere is a 357 MB DLR product — in fast mode Vesta
+renders in its fallback colour. The Solar System Scope endpoint **is reachable from curl**
+(verified 2026-08-23, no User-Agent spoofing needed) — but not from every client; see the
+traps below.
 
-Two traps live in that endpoint, both already handled by the scripts — do not "simplify"
+Three traps live in that endpoint, all already handled by the scripts — do not "simplify"
 them back out:
 
 - The **`8k_` prefix is a product name, not a resolution.** `8k_sun`, `8k_jupiter` and
   `8k_saturn` are served at 4096×2048, not 8192×4096. The per-body comments in the scripts
-  record the resolution each URL actually returns, and those match the committed maps.
+  record the resolution each URL actually returns — keep them accurate, since nothing in
+  git can be diffed against any more.
 - **Unknown texture names soft-404**: the site answers HTTP 200 with an HTML error page
   instead of a 404, so `curl -f` never fires and the HTML would be written into a `.jpg`.
   `8k_uranus.jpg` and `8k_neptune.jpg` do exactly this — there is no 8k product for those
   two, which is why they stay on `2k_`. Both scripts download to a temp file and verify the
   magic bytes before moving it into place.
+- **`Invoke-WebRequest` is refused, `curl` is not.** The site 403s PowerShell's HTTP client
+  whatever User-Agent it sends (a browser string buys one request, then the block returns),
+  while the identical curl request succeeds every time. So the `.ps1` shells out to
+  `curl.exe` (in System32 since Windows 10 1803) rather than trying to disguise
+  `Invoke-WebRequest`. The minor-bodies hosts (USGS, DLR) have no such filter, so that
+  script still uses `Invoke-WebRequest`.
 
-Body surface textures are loaded through `util::resolve_texture_load_path`, which prefers a same-stem GPU-compressed container (`.ktx2` → `.dds` → the configured `.jpg`/`.png`) when present. `scripts/compress_textures.*` encode the downloaded maps into block-compressed, mipmapped KTX2; both the `ktx2` and `dds` Bevy loaders read raw BCn/ASTC (no Basis transcoder), so the `zstd_rust` backend keeps the portable build free of native deps. The 8K Milky Way backdrop stays uncompressed because its pixels are read CPU-side to build the environment cubemap. The block format — and with it the encoder — is chosen per platform by `compress_textures.*`: **BC7 on Windows/Linux desktop GPUs via AMD Compressonator (`compressonatorcli`), ASTC 4×4 on Apple Silicon via Khronos KTX-Software (`ktx`)**. Metal supports ASTC, not BC7, and AMD ships no macOS build of Compressonator at all (4.5.x is Windows + Linux only), so macOS needs the other tool regardless. `ktx create` reads PNG/EXR but not JPEG, so the shell script decodes each `.jpg` to a temp PNG (`sips`) before encoding. Because these compressed containers are generated locally per machine and never committed (only the source `.jpg`/`.png` maps are), each platform only ever holds its own format and the format-blind loader needs no platform logic. A single cross-platform asset set would instead need Basis Universal (UASTC), which the project avoids for its C++ build dependency.
+The shell scripts have one non-obvious guard of their own: under Git Bash on Windows,
+`convert` resolves to Windows' own filesystem-conversion tool, so the ImageMagick probe
+checks the `-version` banner before accepting that candidate.
+
+Body surface textures are loaded through `util::resolve_texture_load_path`, which prefers a same-stem GPU-compressed container (`.ktx2` → `.dds` → the configured `.jpg`/`.png`) when present. `scripts/compress_textures.*` encode the downloaded maps into block-compressed, mipmapped KTX2; both the `ktx2` and `dds` Bevy loaders read raw BCn/ASTC (no Basis transcoder), so the `zstd_rust` backend keeps the portable build free of native deps. The 8K Milky Way backdrop stays uncompressed because its pixels are read CPU-side to build the environment cubemap. The block format — and with it the encoder — is chosen per platform by `compress_textures.*`: **BC7 on Windows/Linux desktop GPUs via AMD Compressonator (`compressonatorcli`), ASTC 4×4 on Apple Silicon via Khronos KTX-Software (`ktx`)**. Metal supports ASTC, not BC7, and AMD ships no macOS build of Compressonator at all (4.5.x is Windows + Linux only), so macOS needs the other tool regardless. `ktx create` reads PNG/EXR but not JPEG, so the shell script decodes each `.jpg` to a temp PNG (`sips`) before encoding. Because these compressed containers are generated locally per machine and never committed (nothing under `assets/textures/` is), each platform only ever holds its own format and the format-blind loader needs no platform logic. A single cross-platform asset set would instead need Basis Universal (UASTC), which the project avoids for its C++ build dependency.
 
 To verify the compressed textures actually upload as block-compressed + mipmapped on the GPU, and to profile the render pipeline, see `docs/gpu-profiling.md` (RenderDoc, AMD RGP/RMV, NVIDIA Nsight, Xcode on macOS, and how to force a capturable `WGPU_BACKEND`).
 
