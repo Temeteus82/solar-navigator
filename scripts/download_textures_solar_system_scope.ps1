@@ -13,19 +13,33 @@ New-Item -ItemType Directory -Force -Path $textureDir | Out-Null
 
 $baseUrl = 'https://www.solarsystemscope.com/textures/download'
 
-# The resolutions below reproduce the maps committed to assets/textures. This
-# list previously asked for the '2k_' variants of eight bodies that are
-# committed at 4K or 8K, so running the documented setup downgraded them by up
-# to 16x in linear resolution.
+# Solar System Scope refuses Invoke-WebRequest outright: it answers 403 with an
+# HTML error page, and no user agent string fixes it (a browser one buys a single
+# request before the block returns), while the identical fetch through curl
+# succeeds every time. So this script shells out to curl.exe the way the .sh port
+# does, rather than trying to make Invoke-WebRequest look like a browser.
+# curl.exe has shipped in System32 since Windows 10 1803.
+$curlCommand = Get-Command curl.exe -ErrorAction SilentlyContinue
+if (-not $curlCommand) {
+    throw 'curl.exe not found. It ships with Windows 10 1803 and later; install curl or run scripts/download_textures_solar_system_scope.sh instead.'
+}
+$curl = $curlCommand.Source
+
+# These textures are the app's only source for these bodies — nothing under
+# assets/textures/ is stored in git — so each entry asks for the largest product
+# that body actually has. An earlier version of this list asked for the '2k_'
+# variants of eight bodies published at 4K or 8K, which downgraded them by up to
+# 16x in linear resolution.
 #
 # Solar System Scope's '8k_' prefix is a product name, not a guarantee: 8k_sun,
-# 8k_jupiter and 8k_saturn are all served at 4096x2048. Uranus and Neptune have
-# no 8k product at all (those names soft-404 into HTML), so they stay on 2k_,
-# which is what their committed maps already are.
+# 8k_jupiter and 8k_saturn are all served at 4096x2048. Uranus, Neptune and the
+# Venus cloud layer have no 8k product at all (those names soft-404 into HTML),
+# so they stay at the largest size that exists.
 $textures = @(
     @{ Remote = '8k_sun.jpg';                Local = 'sun.png' }             # 4096x2048
     @{ Remote = '8k_mercury.jpg';            Local = 'mercury.png' }         # 8192x4096
     @{ Remote = '8k_venus_surface.jpg';      Local = 'venus.png' }           # 8192x4096
+    @{ Remote = '4k_venus_atmosphere.jpg';   Local = 'venus_clouds.png' }    # 4096x2048 (no 8k product)
     @{ Remote = '8k_earth_daymap.jpg';       Local = 'earth.png' }           # 8192x4096
     @{ Remote = '8k_moon.jpg';               Local = 'moon.png' }            # 8192x4096
     @{ Remote = '8k_mars.jpg';               Local = 'mars.png' }            # 8192x4096
@@ -94,7 +108,10 @@ foreach ($t in $textures) {
     # Download to a temp file so a soft-404 never overwrites a good texture.
     $tmp = [IO.Path]::GetTempFileName()
     try {
-        Invoke-WebRequest -Uri "$baseUrl/$($t.Remote)" -OutFile $tmp
+        & $curl -fL --silent --show-error --retry 3 --retry-delay 1 "$baseUrl/$($t.Remote)" -o $tmp
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to download $($t.Remote) (curl exit code $LASTEXITCODE)"
+        }
         if (-not (Test-ImageFile -Path $tmp)) {
             throw "Refusing to write $($t.Local): $($t.Remote) did not return an image"
         }
