@@ -34,6 +34,10 @@ cd /path/to/solar-navigator
 cargo run --release --no-default-features
 ```
 
+Textures are **not stored in git**, so the two `download_textures_*` steps are required,
+not optional — without them every body renders in a flat fallback colour. They only need
+running once per checkout; both scripts skip files already on disk.
+
 ## SPICE Build Prerequisites
 
 The portable build above needs only a Rust toolchain. The SPICE builds additionally
@@ -186,7 +190,12 @@ Each distro is tested in both portable (`--no-default-features`) and SPICE modes
 ## Asset Notes
 
 - Textures from Solar System Scope — check their terms before redistributing.
-- SPICE kernels downloaded from NAIF/JPL public servers.
+- Textures are not tracked in git (`assets/textures/` is ignored apart from its README);
+  the `scripts/download_textures_*` scripts are the only way to obtain them, and the
+  packaging scripts above simply copy whatever `assets/` holds — so run the downloads
+  before building a bundle.
+- SPICE kernels *are* committed under `assets/spice/`; `scripts/download_spice_kernels.*`
+  only refreshes them.
 - Texture filenames expected by the app are documented in `assets/textures/README.md`.
 - `scripts/generate_app_icon.sh` creates `assets/icon/AppIcon.icns` for macOS packaging.
 

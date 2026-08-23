@@ -43,9 +43,19 @@ fetch_to_tmp() {
 # run on Linux — it exited at the dependency check before fetching anything.
 # ImageMagick covers every supported platform; sips stays last so a stock macOS
 # box still works with nothing installed.
+# `convert` is also the name of Windows' filesystem conversion tool, which sits
+# in PATH under Git Bash and answers -version with "Invalid drive
+# specification". Probe for the ImageMagick banner so that impostor is never
+# selected — otherwise every re-encode fails after the download has already
+# succeeded.
+check_candidate() {
+  command -v "$1" >/dev/null 2>&1 || return 1
+  [[ "$1" != "convert" ]] || "$1" -version 2>&1 | grep -qi imagemagick
+}
+
 RESIZER=""
 for candidate in magick convert sips; do
-  if command -v "$candidate" >/dev/null 2>&1; then
+  if check_candidate "$candidate"; then
     RESIZER="$candidate"
     break
   fi
@@ -117,7 +127,7 @@ fi
 
 # Ceres comes from the USGS Astrogeology mosaic archive (served from the
 # asc-pds-services S3 bucket): the Dawn FC clear-filter global mosaic at 20 ppd,
-# 7383x3691. It is the source of the committed ceres.png and is used in both
+# 7383x3691. It is the source of ceres.png and is used in both
 # modes, since USGS publishes no smaller browse rendering of it.
 CERES_URL='https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Ceres_Dawn_FC_DLR_global_20ppd_Oct2015.tif'
 
@@ -133,13 +143,15 @@ CERES_URL='https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Ceres_Dawn
 # sphere it crushes the terrain into a band and smears the projection's dead
 # corners across the globe — that is exactly how the broken map replaced in PR
 # #65 got committed. So Vesta is fetched only in FULL_RES mode, from the global
-# product; fast mode leaves the committed vesta.png alone.
+# product, which is a 357 MB download. Nothing under assets/textures/ is stored
+# in git, so fast mode simply leaves vesta.png absent and the body renders in
+# its fallback colour.
 #
 # That mosaic is 26704x13080 (~2.042:1), not 2:1, so it is squared up to an
 # exact 4096x2048 rather than merely width-scaled: the equirectangular mapping
 # assumes 2:1, and 4096x2006 would leave a height that is not 4-aligned, which
 # compress_textures.sh would then shrink to 2004 and drift further. Same
-# normalisation the committed map got in PR #65.
+# normalisation applied in PR #65.
 VESTA_GLOBAL_URL='https://dawngis.dlr.de/data/Vesta/mosaics/HAMO/truecolor/Vesta_true_color_HAMO-1-2_global.png'
 
 if [[ "$FULL_RES" == "1" ]]; then
@@ -178,8 +190,8 @@ else
   echo "Downloading compact science textures (fast mode)..."
   fetch_and_convert "$CERES_URL" "tif" "${TEXTURE_DIR}/ceres.png"
   echo "Skipping vesta.png (only the Mollweide-projected preview is published at"
-  echo "  this size; re-run with FULL_RES=1 for the equirectangular mosaic, or"
-  echo "  restore the committed map with \`git restore assets/textures/vesta.png\`)"
+  echo "  this size, and it maps onto a sphere wrong. Vesta renders in its fallback"
+  echo "  colour until you re-run with FULL_RES=1 for the 357 MB equirectangular mosaic.)"
   fetch_and_convert \
     "https://astrogeology.usgs.gov/ckan/dataset/a5f1b7f4-9822-4697-a201-e23ef4bd3e16/resource/96be2aa1-f384-4a9f-9458-a8431a0e7956/download/pluto_newhorizons_global_mosaic_300m_jul2017_1024.jpg" \
     "jpg" \

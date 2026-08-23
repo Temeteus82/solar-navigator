@@ -6,10 +6,14 @@
 # the current artefacts as in-use. Local state, never committed.
 /sweep.timestamp
 
-# Locally generated GPU-compressed textures (platform-specific block format:
-# BC7 on desktop, ASTC on Apple Silicon). Regenerate with scripts/compress_textures.*
-assets/textures/*.dds
-assets/textures/*.ktx2
+# Body/sky textures are not stored in git — they are fetched per checkout by
+# scripts/download_textures_*.{sh,ps1} and, optionally, re-encoded into
+# platform-specific GPU block formats (BC7 on desktop, ASTC on Apple Silicon)
+# by scripts/compress_textures.*. Ignoring the whole folder keeps both the
+# downloaded source maps and the generated .ktx2/.dds containers out of the
+# history; only the README documenting the expected filenames is tracked.
+assets/textures/*
+!assets/textures/README.md
 
 .DS_Store
 **/.DS_Store

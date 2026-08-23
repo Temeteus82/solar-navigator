@@ -372,7 +372,8 @@ pub(super) fn setup_scene(
         // rename this file debugs the symptom instead of the cause.
         warn!(
             "Milky Way backdrop not found at {}; falling back to the low-resolution \
-             procedural starfield. Restore it with `git restore assets/textures/`.",
+             procedural starfield. Textures are not stored in git; fetch them with \
+             `scripts/download_textures_solar_system_scope.sh` (or the .ps1 port).",
             milky_way_path.display()
         );
         spawn_fallback_starfield(&mut commands, &mut meshes, &mut materials, &mut images)
