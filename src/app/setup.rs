@@ -304,13 +304,16 @@ pub(super) fn setup_scene(
         }
 
         if let Some(ring) = spec.rings {
-            let ring_tex_path = texture_dir.join("saturn_ring.png");
-            let ring_texture = if ring_tex_path.is_file() {
-                asset_server.load::<Image>("textures/saturn_ring.png")
-            } else {
-                // PlanetRingMaterial requires a texture handle; fall back to a
-                // 1x1 white pixel so the tint colour drives the appearance.
-                images.add(white_pixel_image())
+            // Same .ktx2 -> .dds -> .png preference as the body maps. The ring
+            // strip is 8192x500 (both already 4-aligned, so no block-alignment
+            // resize) and BC7/ASTC keep its alpha, which the shader relies on.
+            let ring_texture = match resolve_texture_load_path(&texture_dir, "saturn_ring.png") {
+                Some(relative_path) => asset_server.load::<Image>(relative_path),
+                None => {
+                    // PlanetRingMaterial requires a texture handle; fall back to a
+                    // 1x1 white pixel so the tint colour drives the appearance.
+                    images.add(white_pixel_image())
+                }
             };
             let ring_handle = ring_mesh(&mut meshes, ring.inner_radius, ring.outer_radius, 128);
             let ring_material = ring_materials.add(PlanetRingMaterial {
