@@ -72,9 +72,18 @@ cargo install cargo-sweep
 # Stamp the current build as "in use" (run before a long break)
 ./scripts/sweep.sh stamp
 
+# Keep only what the installed toolchains built — the cleanup that pays after a
+# Rust upgrade, which the day-based modes can never catch
+./scripts/sweep.sh installed
+
 # Nuke everything (like cargo clean)
 ./scripts/sweep.sh all
 ```
+
+`scripts/sweep.ps1` is the PowerShell sibling and takes the same five modes
+(`./scripts/sweep.ps1 installed`), so Windows needs no bash. Prefer it there: `.sh`
+is associated with `git-bash.exe`, which runs the script in a detached window where
+you see neither its output nor its exit code.
 
 ### First-time setup
 
