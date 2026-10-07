@@ -43,6 +43,10 @@ bevy = { version = "0.19.1", default-features = false, features = [
     "dds",
     "multi_threaded",
     "png",
+    # Populates the reflection type registry, which spawning a glTF scene
+    # (the Voyager model) needs: the scene spawner clones its components
+    # through reflection and panics on any type left unregistered.
+    "reflect_auto_register",
     "std",
     "tonemapping_luts",
 ] }

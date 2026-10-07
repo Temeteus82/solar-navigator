@@ -1,4 +1,3 @@
-#[cfg(feature = "spice")]
 use chrono::Utc;
 use reqwest::blocking::Client;
 #[cfg(feature = "spice")]
@@ -17,6 +16,26 @@ const CHARON_SEMI_MAJOR_AXIS_KM: f64 = 19_591.0;
 const SPICE_REFERENCE_FRAME: &str = "ECLIPJ2000";
 const HORIZONS_API_URL: &str = "https://ssd.jpl.nasa.gov/api/horizons.api";
 const HORIZONS_CENTER: &str = "'500@10'";
+
+pub const VOYAGER_1_TARGET: &str = "VOYAGER 1";
+// Voyager 1 is not in the planetary kernels, so it always flies this linear
+// model: its heliocentric ECLIPJ2000 position at 2026-01-01 00:00 UT plus the
+// mean velocity over 2026–2030, both from JPL Horizons (target -31). Long past
+// its last planetary encounter (Saturn, 1980) it coasts on a near-straight
+// hyperbolic escape, so the line holds to ~0.01 AU across that span and stays
+// a fair sketch for the decades either side. In SPICE mode the Horizons sync
+// corrects whatever residual remains at the current date.
+const VOYAGER_1_EPOCH_UNIX_DAYS: f64 = 20_454.0; // 2026-01-01T00:00:00Z
+const VOYAGER_1_EPOCH_POSITION_AU: [f64; 3] = [
+    -31.836_414_919_295_77,
+    -134.678_491_196_756_7,
+    97.444_810_751_349_93,
+];
+const VOYAGER_1_VELOCITY_AU_PER_DAY: [f64; 3] = [
+    -0.001_191_018_381_385_094,
+    -0.007_859_171_278_867_077,
+    0.005_675_897_292_261_714,
+];
 
 #[derive(Clone, Copy)]
 struct FallbackOrbit {
@@ -40,6 +59,9 @@ pub struct SpiceEphemeris {
     #[cfg(feature = "spice")]
     state: EphemerisState,
     status_line: String,
+    // Wall-clock time at construction (simulation day 0), in days since the
+    // Unix epoch — anchors the date-dependent Voyager trajectory.
+    start_unix_days: f64,
 }
 
 impl SpiceEphemeris {
@@ -54,6 +76,7 @@ impl SpiceEphemeris {
         Self {
             status_line: "Fallback orbit mode active: app was compiled without the `spice` feature"
                 .to_string(),
+            start_unix_days: unix_days_now(),
         }
     }
 
@@ -73,6 +96,7 @@ impl SpiceEphemeris {
                     leap_seconds.display(),
                     planetary_ephemeris.display()
                 ),
+                start_unix_days: unix_days_now(),
             };
         }
 
@@ -84,6 +108,7 @@ impl SpiceEphemeris {
                     status_line: format!(
                         "Fallback orbit mode active: could not acquire SPICE lock ({err})"
                     ),
+                    start_unix_days: unix_days_now(),
                 };
             }
         };
@@ -120,6 +145,7 @@ impl SpiceEphemeris {
                 base_et,
             },
             status_line,
+            start_unix_days: unix_days_now(),
         }
     }
 
@@ -145,7 +171,7 @@ impl SpiceEphemeris {
             return [0.0, 0.0, 0.0];
         }
         if !spice_supports_target(target) {
-            return fallback_position_au(target, elapsed_simulation_days);
+            return self.analytic_position_au(target, elapsed_simulation_days);
         }
 
         match &self.state {
@@ -154,7 +180,7 @@ impl SpiceEphemeris {
                 let sl = lock.lock().expect("SPICE lock poisoned");
                 spice_position_au_at_et(&sl, target, et)
             }
-            EphemerisState::Fallback => fallback_position_au(target, elapsed_simulation_days),
+            EphemerisState::Fallback => self.analytic_position_au(target, elapsed_simulation_days),
         }
     }
 
@@ -163,7 +189,7 @@ impl SpiceEphemeris {
         if target.eq_ignore_ascii_case("SUN") {
             [0.0, 0.0, 0.0]
         } else {
-            fallback_position_au(target, elapsed_simulation_days)
+            self.analytic_position_au(target, elapsed_simulation_days)
         }
     }
 
@@ -182,10 +208,10 @@ impl SpiceEphemeris {
                     spice_position_au_at_et(&sl, target, et)
                 } else {
                     let elapsed_simulation_days = (et - *base_et) / SECONDS_PER_DAY;
-                    fallback_position_au(target, elapsed_simulation_days)
+                    self.analytic_position_au(target, elapsed_simulation_days)
                 }
             }
-            EphemerisState::Fallback => fallback_position_au(target, 0.0),
+            EphemerisState::Fallback => self.analytic_position_au(target, 0.0),
         }
     }
 
@@ -194,6 +220,26 @@ impl SpiceEphemeris {
         let _ = utc_timestamp;
         self.position_au(target, 0.0)
     }
+
+    /// Non-SPICE position: Voyager's dated trajectory, else the analytic orbits.
+    fn analytic_position_au(&self, target: &str, elapsed_simulation_days: f64) -> [f64; 3] {
+        if target == VOYAGER_1_TARGET {
+            voyager_1_position_au(self.start_unix_days + elapsed_simulation_days)
+        } else {
+            fallback_position_au(target, elapsed_simulation_days)
+        }
+    }
+}
+
+fn unix_days_now() -> f64 {
+    Utc::now().timestamp_millis() as f64 / (1_000.0 * 86_400.0)
+}
+
+fn voyager_1_position_au(unix_days: f64) -> [f64; 3] {
+    let dt = unix_days - VOYAGER_1_EPOCH_UNIX_DAYS;
+    std::array::from_fn(|axis| {
+        VOYAGER_1_EPOCH_POSITION_AU[axis] + VOYAGER_1_VELOCITY_AU_PER_DAY[axis] * dt
+    })
 }
 
 #[cfg(feature = "spice")]
@@ -251,6 +297,7 @@ pub fn horizons_command_for_target(target: &str) -> Option<&'static str> {
         "EUROPA" => Some("502"),
         "GANYMEDE" => Some("503"),
         "CALLISTO" => Some("504"),
+        VOYAGER_1_TARGET => Some("-31"),
         _ => None,
     }
 }
@@ -699,6 +746,30 @@ $$EOE
     fn fallback_position_au_callisto_xy_radius_matches_semi_major_axis() {
         let expected = CALLISTO_ORBIT.semi_major_axis_km / KM_PER_AU;
         assert_close(galilean_moon_xy_radius("CALLISTO", 200.0), expected, 1e-12);
+    }
+
+    #[test]
+    fn voyager_1_position_au_matches_horizons_reference_states() {
+        // Horizons heliocentric ECLIPJ2000 positions for target -31.
+        let at_epoch = voyager_1_position_au(VOYAGER_1_EPOCH_UNIX_DAYS);
+        for (actual, expected) in at_epoch.iter().zip(VOYAGER_1_EPOCH_POSITION_AU) {
+            assert_close(*actual, expected, EPS);
+        }
+
+        // 2030-01-01, 1461 days on: the fit's other endpoint.
+        let later = voyager_1_position_au(VOYAGER_1_EPOCH_UNIX_DAYS + 1461.0);
+        let expected = [-33.576_492_774_5, -146.160_740_435_2, 105.737_296_695_3];
+        for (actual, expected) in later.iter().zip(expected) {
+            assert_close(*actual, expected, 1e-6);
+        }
+    }
+
+    #[test]
+    fn voyager_1_epoch_constant_is_2026_new_year() {
+        let epoch =
+            chrono::DateTime::from_timestamp((VOYAGER_1_EPOCH_UNIX_DAYS * 86_400.0) as i64, 0)
+                .expect("valid timestamp");
+        assert_eq!(epoch.to_rfc3339(), "2026-01-01T00:00:00+00:00");
     }
 
     #[test]

@@ -5,7 +5,7 @@ use super::types::{
     CloudLayer, CloudOf, EphemerisResource, HorizonsHttpClient, HorizonsSyncResult,
     HorizonsSyncState, HorizonsSyncTaskInput, HorizonsTargetSample, KM_PER_AU, LightingRig,
     MainCamera, PlanetRing, PlanetTextureEntry, PlanetTextureRegistry, RingOf, StarsBackdrop,
-    TextureStatus,
+    TextureStatus, model_scale,
 };
 use super::util::{
     color_from_rgba, eclipj2000_to_scene, equirectangular_to_cubemap_image, linear_from_rgb,
@@ -158,6 +158,18 @@ pub(super) fn setup_scene(
     let mut texture_registry = PlanetTextureRegistry::default();
 
     for (index, spec) in BODIES.iter().enumerate() {
+        if let Some(model_file) = spec.model_file {
+            // Spacecraft: a glTF scene instead of a textured sphere, with no
+            // atmosphere/cloud/ring layers. `update_body_positions` places and
+            // orients it like any other body.
+            commands.spawn((
+                WorldAssetRoot(asset_server.load(GltfAssetLabel::Scene(0).from_asset(model_file))),
+                Transform::from_scale(Vec3::splat(model_scale(spec))),
+                BodyEntity { index },
+            ));
+            continue;
+        }
+
         let sphere_handle = sphere_mesh(&mut meshes, spec.visual_radius, spec.mesh_subdivisions);
 
         // Prefer a generated GPU-compressed variant (.ktx2/.dds) when present,

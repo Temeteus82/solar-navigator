@@ -51,6 +51,12 @@ pub(super) struct BodySpec {
     // Optional translucent cloud map rendered as a thin shell just above the
     // surface (e.g. Venus). `None` for bodies with no separate cloud layer.
     pub(super) cloud_texture: Option<&'static str>,
+    // glTF scene (relative to the assets root) rendered in place of the
+    // textured sphere — used for spacecraft. When set, the sphere-only fields
+    // (`texture_file`, `mesh_subdivisions`, PBR, atmosphere, clouds, rings)
+    // are ignored. The model is authored in metres and scaled so that
+    // `physical_radius_km` (its bounding radius) maps to `visual_radius`.
+    pub(super) model_file: Option<&'static str>,
     // Signed sidereal spin rate in radians per simulated second.
     // Positive = prograde, negative = retrograde.
     pub(super) spin_radians_per_second: f32,
@@ -346,7 +352,7 @@ pub(super) struct StarPoint {
     pub(super) size: f32,
 }
 
-pub(super) const BODIES: [BodySpec; 18] = [
+pub(super) const BODIES: [BodySpec; 19] = [
     BodySpec {
         display_name: "Sun",
         spice_target: "SUN",
@@ -354,6 +360,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         color: [1.0, 0.9, 0.55, 1.0],
         texture_file: "sun.png",
         cloud_texture: None,
+        model_file: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(25.38),
         mesh_subdivisions: 96,
         metallic: 0.0,
@@ -375,6 +382,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         color: [0.65, 0.62, 0.59, 1.0],
         texture_file: "mercury.png",
         cloud_texture: None,
+        model_file: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(58.646),
         mesh_subdivisions: 56,
         metallic: 0.03,
@@ -396,6 +404,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         color: [0.92, 0.76, 0.4, 1.0],
         texture_file: "venus.png",
         cloud_texture: Some("venus_clouds.png"),
+        model_file: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(-243.025),
         mesh_subdivisions: 60,
         metallic: 0.02,
@@ -419,6 +428,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         color: [0.3, 0.5, 1.0, 1.0],
         texture_file: "earth.png",
         cloud_texture: None,
+        model_file: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(0.997_269_68),
         mesh_subdivisions: 64,
         metallic: 0.05,
@@ -441,6 +451,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         color: [0.84, 0.84, 0.8, 1.0],
         texture_file: "moon.png",
         cloud_texture: None,
+        model_file: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(27.321_661),
         mesh_subdivisions: 48,
         metallic: 0.01,
@@ -462,6 +473,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         color: [0.8, 0.35, 0.2, 1.0],
         texture_file: "mars.png",
         cloud_texture: None,
+        model_file: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(1.025_957),
         mesh_subdivisions: 56,
         metallic: 0.02,
@@ -483,6 +495,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         color: [0.74, 0.74, 0.72, 1.0],
         texture_file: "ceres.png",
         cloud_texture: None,
+        model_file: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(0.3781),
         mesh_subdivisions: 40,
         metallic: 0.01,
@@ -504,6 +517,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         color: [0.7, 0.66, 0.62, 1.0],
         texture_file: "vesta.png",
         cloud_texture: None,
+        model_file: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(0.2226),
         mesh_subdivisions: 40,
         metallic: 0.01,
@@ -527,6 +541,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         color: [0.82, 0.66, 0.42, 1.0],
         texture_file: "jupiter.png",
         cloud_texture: None,
+        model_file: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(0.41354),
         mesh_subdivisions: 72,
         metallic: 0.0,
@@ -549,6 +564,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         color: [0.88, 0.65, 0.28, 1.0],
         texture_file: "io.png",
         cloud_texture: None,
+        model_file: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(1.769138),
         mesh_subdivisions: 48,
         metallic: 0.01,
@@ -571,6 +587,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         color: [0.94, 0.91, 0.84, 1.0],
         texture_file: "europa.png",
         cloud_texture: None,
+        model_file: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(3.551181),
         mesh_subdivisions: 44,
         metallic: 0.02,
@@ -593,6 +610,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         color: [0.68, 0.65, 0.60, 1.0],
         texture_file: "ganymede.png",
         cloud_texture: None,
+        model_file: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(7.154553),
         mesh_subdivisions: 52,
         metallic: 0.01,
@@ -615,6 +633,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         color: [0.46, 0.44, 0.42, 1.0],
         texture_file: "callisto.png",
         cloud_texture: None,
+        model_file: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(16.689018),
         mesh_subdivisions: 48,
         metallic: 0.01,
@@ -636,6 +655,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         color: [0.83, 0.77, 0.56, 1.0],
         texture_file: "saturn.png",
         cloud_texture: None,
+        model_file: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(0.444),
         mesh_subdivisions: 72,
         metallic: 0.0,
@@ -661,6 +681,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         color: [0.57, 0.82, 0.92, 1.0],
         texture_file: "uranus.png",
         cloud_texture: None,
+        model_file: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(-0.71833),
         mesh_subdivisions: 64,
         metallic: 0.0,
@@ -682,6 +703,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         color: [0.35, 0.45, 0.95, 1.0],
         texture_file: "neptune.png",
         cloud_texture: None,
+        model_file: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(0.67125),
         mesh_subdivisions: 64,
         metallic: 0.0,
@@ -705,6 +727,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         color: [0.82, 0.76, 0.68, 1.0],
         texture_file: "pluto.png",
         cloud_texture: None,
+        model_file: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(-6.38723),
         mesh_subdivisions: 48,
         metallic: 0.0,
@@ -727,6 +750,7 @@ pub(super) const BODIES: [BodySpec; 18] = [
         color: [0.74, 0.74, 0.72, 1.0],
         texture_file: "charon.png",
         cloud_texture: None,
+        model_file: None,
         spin_radians_per_second: sidereal_spin_radians_per_second(-6.38723),
         mesh_subdivisions: 36,
         metallic: 0.0,
@@ -741,7 +765,45 @@ pub(super) const BODIES: [BodySpec; 18] = [
         rings: None,
         pole_direction: PLUTO_POLE_SCENE,
     },
+    BodySpec {
+        display_name: "Voyager 1",
+        spice_target: "VOYAGER 1",
+        // Bounding radius in scene units — ~10⁷× real size so the probe is
+        // findable at all, and deliberately larger than the moons: ~170 AU out
+        // (~42 000 scene units) f32 positions snap to ~0.004 units, which
+        // visibly crunches anything much smaller.
+        visual_radius: 0.5,
+        color: [0.85, 0.82, 0.7, 1.0],
+        // Unused: rendered from `model_file`, not a textured sphere.
+        texture_file: "",
+        cloud_texture: None,
+        model_file: Some("models/spacecraft/voyager_probe.glb"),
+        // Attitude is held dish-to-Earth by `update_body_positions`, not spun.
+        spin_radians_per_second: 0.0,
+        mesh_subdivisions: 0,
+        metallic: 0.0,
+        roughness: 0.0,
+        emissive: [0.0, 0.0, 0.0],
+        atmosphere_scale: 0.0,
+        atmosphere_emissive: [0.0, 0.0, 0.0, 0.0],
+        // Half the ~13 m magnetometer boom span plus the bus — the model's
+        // bounding radius in metres, which also sets its render scale.
+        physical_radius_km: 0.014,
+        // Launch mass, including ~104 kg of hydrazine.
+        mass_kg: 825.5,
+        // On a hyperbolic escape trajectory — no period or semi-major axis.
+        orbital_period_days: None,
+        semi_major_axis_au: None,
+        rings: None,
+        pole_direction: ECLIPTIC_POLE_SCENE,
+    },
 ];
+
+/// Scale that maps a metre-unit glTF model onto its body's `visual_radius`,
+/// taking `physical_radius_km` as the model's bounding radius.
+pub(super) fn model_scale(spec: &BodySpec) -> f32 {
+    spec.visual_radius / (spec.physical_radius_km * 1_000.0) as f32
+}
 
 #[cfg(test)]
 mod tests {

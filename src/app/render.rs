@@ -1,7 +1,7 @@
 use super::types::{
     AU_TO_SCENE_UNITS, AppStatus, AtmosphereLayer, BODIES, BodyRuntime, BodyTrails, CameraMode,
-    LightingRig, OrbitCameraState, PlanetRing, RenderSettings, SimulationState, StarsBackdrop,
-    TRAIL_MAX_POINTS,
+    LightingRig, MainCamera, OrbitCameraState, PlanetRing, RenderSettings, SimulationState,
+    StarsBackdrop, TRAIL_MAX_POINTS,
 };
 use super::util::format_simulation_speed;
 use bevy::prelude::*;
@@ -99,6 +99,21 @@ pub(super) fn sync_visibility_toggles(
     }
     for mut visibility in &mut ring_query {
         *visibility = ring_visibility;
+    }
+}
+
+/// Keeps the sky sphere centred on the camera, as a skybox: real stars sit at
+/// effectively infinite distance, and Voyager flies ~170 AU out — beyond the
+/// sphere's `STARFIELD_RADIUS` if it stayed fixed on the Sun.
+pub(super) fn center_sky_on_camera(
+    camera_query: Query<&Transform, (With<MainCamera>, Without<StarsBackdrop>)>,
+    mut sky_query: Query<&mut Transform, With<StarsBackdrop>>,
+) {
+    let Ok(camera) = camera_query.single() else {
+        return;
+    };
+    for mut transform in &mut sky_query {
+        transform.translation = camera.translation;
     }
 }
 
