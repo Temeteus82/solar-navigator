@@ -267,8 +267,15 @@ bloom near the Sun. A low ambient (0.25) lifts the night side.
 
 The `MainCamera` carries post-processing that shapes the final image: `AutoExposure` (range
 widened past the default so outer planets aren't crushed to black), `Bloom`, and SSAO (fed
-by depth/normal prepasses). Body visual radii are ~15× their physical size so they read at
-solar-system scale without being artificially huge.
+by depth/normal prepasses), plus `ContactShadows`. Body visual radii are ~15× their physical
+size so they read at solar-system scale without being artificially huge.
+
+Bevy's world-unit defaults for the sun's shadow cascades and depth bias, SSAO thickness and
+contact shadows are tuned for a ~10-unit view, but views here run from Voyager close-ups
+(~0.036 units per metre) to the whole system. `render.rs:scale_view_dependent_effects`
+therefore rescales that whole default set uniformly with the camera's focus distance
+(`camera.rs:view_focus_distance`) every frame — set new effects up the same way rather than
+hard-coding world-unit values.
 
 ### Asset resolution order
 
