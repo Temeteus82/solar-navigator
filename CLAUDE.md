@@ -186,7 +186,18 @@ The `spice` Cargo feature (on by default) gates all CSPICE integration with `#[c
 
 ### BODIES array and BodySpec
 
-`types.rs:BODIES` is the canonical static array of all 18 rendered solar-system bodies. Every body's display name, SPICE target string, visual radius, texture filename, PBR parameters, spin rate, and atmosphere config live here. Body index is the stable identifier used everywhere (queries, positions vec, camera targeting).
+`types.rs:BODIES` is the canonical static array of all 19 rendered bodies (18 natural bodies plus the Voyager 1 probe). Every body's display name, SPICE target string, visual radius, texture filename, PBR parameters, spin rate, and atmosphere config live here. Body index is the stable identifier used everywhere (queries, positions vec, camera targeting).
+
+A body with `model_file: Some(..)` (currently only Voyager 1) is spawned from a glTF scene
+under `assets/models/` instead of a textured sphere; the model is authored in metres and
+scaled so `physical_radius_km` (its bounding radius) maps to `visual_radius`. Voyager is in
+no loaded kernel, so `ephemeris.rs` places it on a linear escape trajectory fitted to JPL
+Horizons (target `-31`) state vectors, anchored to wall-clock time; the Horizons sync
+corrects the residual. It flies ~170 AU (~42 000 scene units) out — beyond the
+`STARFIELD_RADIUS` sky sphere, which is why `render.rs:center_sky_on_camera` keeps the
+sky centred on the camera. Spawning glTF scenes needs Bevy's `reflect_auto_register`
+feature (enabled in `Cargo.toml`); without it the scene spawner panics on unregistered
+types.
 
 ### Coordinate remapping
 

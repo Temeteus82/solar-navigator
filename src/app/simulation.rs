@@ -125,11 +125,21 @@ pub(super) fn update_body_positions(
         let scene_position = scene_positions[body.index];
 
         transform.translation = scene_position.as_vec3();
-        let spin_step = spin_step_radians(spec.spin_radians_per_second, frame_simulation_seconds);
-        if spin_step != 0.0 {
-            // After the mesh pre-rotation in setup, local +Z is the visual spin axis.
-            // Negating here aligns prograde texture motion with expected planet rotation.
-            transform.rotate_local_z(spin_step);
+        if spec.model_file.is_some() {
+            // Spacecraft hold attitude rather than spin: point the model's +Y
+            // axis (Voyager's high-gain dish) back at the Sun — Earth, at
+            // these distances.
+            if let Some(sunward) = (-scene_position.as_vec3()).try_normalize() {
+                transform.rotation = Quat::from_rotation_arc(Vec3::Y, sunward);
+            }
+        } else {
+            let spin_step =
+                spin_step_radians(spec.spin_radians_per_second, frame_simulation_seconds);
+            if spin_step != 0.0 {
+                // After the mesh pre-rotation in setup, local +Z is the visual spin axis.
+                // Negating here aligns prograde texture motion with expected planet rotation.
+                transform.rotate_local_z(spin_step);
+            }
         }
 
         if let Some(slot) = body_runtime.positions.get_mut(body.index) {

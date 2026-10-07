@@ -137,6 +137,7 @@ pub(crate) fn run() {
             Update,
             (
                 camera::update_camera_transform,
+                render::center_sky_on_camera.after(camera::update_camera_transform),
                 render::apply_lighting_preset,
                 render::sync_visibility_toggles,
                 render::record_body_trails,
