@@ -4,6 +4,8 @@
 @group(#{MATERIAL_BIND_GROUP}) @binding(0) var<uniform> tint: vec4<f32>;
 // x = density, y = rim power, z = forward phase power, w = brightness
 @group(#{MATERIAL_BIND_GROUP}) @binding(1) var<uniform> params: vec4<f32>;
+// xyz = the Sun's render-space position (floating origin: not the world origin)
+@group(#{MATERIAL_BIND_GROUP}) @binding(2) var<uniform> sun_position: vec4<f32>;
 
 fn safe_normalize(v: vec3<f32>) -> vec3<f32> {
     let len2 = max(dot(v, v), 1e-6);
@@ -16,8 +18,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let normal = safe_normalize(in.world_normal);
 
     let view_dir = safe_normalize(view.world_position - world_position);
-    // Sun is fixed at world origin in this scene.
-    let light_dir = safe_normalize(-world_position);
+    let light_dir = safe_normalize(sun_position.xyz - world_position);
 
     let n_dot_l = max(dot(normal, light_dir), 0.0);
     let rim = pow(clamp(1.0 - dot(normal, view_dir), 0.0, 1.0), params.y);

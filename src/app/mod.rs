@@ -14,6 +14,7 @@ use bevy::math::DVec3;
 use bevy::pbr::MaterialPlugin;
 use bevy::post_process::auto_exposure::AutoExposurePlugin;
 use bevy::prelude::*;
+use bevy::transform::TransformSystems;
 use bevy_egui::{EguiGlobalSettings, EguiPlugin, EguiPrimaryContextPass};
 use chrono::{Datelike, Utc};
 use materials::{PlanetAtmosphereMaterial, PlanetRingMaterial};
@@ -21,8 +22,8 @@ use std::f32::consts::PI;
 use std::time::Duration;
 use types::{
     AppPaths, AppStatus, BODIES, BodyRuntime, BodyTrails, EphemerisResource, HorizonsHttpClient,
-    HorizonsSyncState, OrbitCameraState, RenderSettings, SimulationEpoch, SimulationState,
-    TextureStatus,
+    HorizonsSyncState, OrbitCameraState, RenderOrigin, RenderSettings, SimulationEpoch,
+    SimulationState, TextureStatus,
 };
 
 pub(crate) fn run() {
@@ -67,6 +68,7 @@ pub(crate) fn run() {
             positions: vec![DVec3::ZERO; BODIES.len()],
         })
         .insert_resource(BodyTrails::new(BODIES.len()))
+        .insert_resource(RenderOrigin::default())
         .insert_resource(SimulationEpoch {
             start_utc: Utc::now(),
         })
@@ -77,9 +79,9 @@ pub(crate) fn run() {
             distance: 188.3,
             min_distance: 0.05,
             max_distance: 30_000.0,
-            target: Vec3::ZERO,
+            target: DVec3::ZERO,
             flight: None,
-            free_position: Vec3::ZERO,
+            free_position: DVec3::ZERO,
             free_yaw: 0.0,
             free_pitch: 0.0,
         })
@@ -136,15 +138,28 @@ pub(crate) fn run() {
         .add_systems(
             Update,
             (
-                camera::update_camera_transform,
-                render::center_sky_on_camera.after(camera::update_camera_transform),
+                // Fixes this frame's floating origin, so it runs after every
+                // system that moves the camera; everything that reads
+                // `RenderOrigin` in `Update` runs after it.
+                camera::update_camera_transform
+                    .after(camera::handle_jump_requests)
+                    .after(camera::toggle_camera_mode)
+                    .after(camera::orbit_camera_input)
+                    .after(camera::free_camera_input)
+                    .after(camera::track_selected_body)
+                    .after(camera::apply_camera_flight),
+                render::sync_shader_sun_positions.after(camera::update_camera_transform),
                 render::apply_lighting_preset,
                 render::sync_visibility_toggles,
                 render::record_body_trails,
-                render::draw_body_trails,
-                render::draw_orbit_paths,
+                render::draw_body_trails.after(camera::update_camera_transform),
+                render::draw_orbit_paths.after(camera::update_camera_transform),
                 render::update_window_title,
             ),
+        )
+        .add_systems(
+            PostUpdate,
+            render::apply_render_origin.before(TransformSystems::Propagate),
         )
         .add_systems(EguiPrimaryContextPass, ui::draw_side_panel);
 

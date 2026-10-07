@@ -248,7 +248,9 @@ pub(super) struct SimulationEpoch {
 
 #[derive(Resource)]
 pub(super) struct BodyTrails {
-    pub(super) points: Vec<VecDeque<Vec3>>,
+    /// World-space samples (f64, like `BodyRuntime::positions`); shifted
+    /// into render space at draw time.
+    pub(super) points: Vec<VecDeque<DVec3>>,
 }
 
 impl BodyTrails {
@@ -269,6 +271,25 @@ impl BodyTrails {
 pub(super) struct BodyRuntime {
     pub(super) positions: Vec<DVec3>,
 }
+
+/// Floating origin: the world-space point that renders at `(0, 0, 0)`.
+///
+/// World positions are kept in f64 (`BodyRuntime::positions`,
+/// `WorldPosition`, the camera state) and only become f32 render-space
+/// `Transform`s as offsets from this point. Without it, everything at
+/// Voyager's ~42 000 scene units snaps to a 0.004-unit f32 grid — ~11 cm on
+/// the probe model — crunching its thin geometry. `update_camera_transform`
+/// sets it to the camera's world position each frame, so the camera always
+/// sits at the render origin and precision is greatest around the viewer.
+#[derive(Resource, Default)]
+pub(super) struct RenderOrigin(pub(super) DVec3);
+
+/// Absolute world-space position of an entity that follows the simulation.
+/// `render::apply_render_origin` derives its `Transform::translation` from
+/// this and `RenderOrigin` every frame — systems write this, never the
+/// translation directly.
+#[derive(Component, Clone, Copy, Default)]
+pub(super) struct WorldPosition(pub(super) DVec3);
 
 #[derive(Resource)]
 pub(super) struct LightingRig {
@@ -293,11 +314,11 @@ pub(super) struct OrbitCameraState {
     pub(super) distance: f32,
     pub(super) min_distance: f32,
     pub(super) max_distance: f32,
-    pub(super) target: Vec3,
+    pub(super) target: DVec3,
     pub(super) flight: Option<CameraFlight>,
     // Free-camera state: world-space position and look angles. Seeded from the
     // orbit camera on entering Free mode so the handoff is seamless.
-    pub(super) free_position: Vec3,
+    pub(super) free_position: DVec3,
     pub(super) free_yaw: f32,
     pub(super) free_pitch: f32,
 }
@@ -769,9 +790,8 @@ pub(super) const BODIES: [BodySpec; 19] = [
         display_name: "Voyager 1",
         spice_target: "VOYAGER 1",
         // Bounding radius in scene units — ~10⁷× real size so the probe is
-        // findable at all, and deliberately larger than the moons: ~170 AU out
-        // (~42 000 scene units) f32 positions snap to ~0.004 units, which
-        // visibly crunches anything much smaller.
+        // findable at all. Rendering precision this far out comes from the
+        // floating origin (`RenderOrigin`), not from this size.
         visual_radius: 0.5,
         color: [0.85, 0.82, 0.7, 1.0],
         // Unused: rendered from `model_file`, not a textured sphere.

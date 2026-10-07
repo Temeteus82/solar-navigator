@@ -194,8 +194,8 @@ scaled so `physical_radius_km` (its bounding radius) maps to `visual_radius`. Vo
 no loaded kernel, so `ephemeris.rs` places it on a linear escape trajectory fitted to JPL
 Horizons (target `-31`) state vectors, anchored to wall-clock time; the Horizons sync
 corrects the residual. It flies ~170 AU (~42 000 scene units) out — beyond the
-`STARFIELD_RADIUS` sky sphere, which is why `render.rs:center_sky_on_camera` keeps the
-sky centred on the camera. Spawning glTF scenes needs Bevy's `reflect_auto_register`
+`STARFIELD_RADIUS` sky sphere, which works only because the sky sphere stays at the render
+origin, i.e. on the camera (see *Floating origin* below). Spawning glTF scenes needs Bevy's `reflect_auto_register`
 feature (enabled in `Cargo.toml`); without it the scene spawner panics on unregistered
 types.
 
@@ -210,6 +210,30 @@ scene_z = -au_y  * scale   ← negate to preserve right-handedness
 ```
 
 The same sign convention applies to the Horizons sync offset stored in `HorizonsSyncState::per_body_au_offset`.
+
+### Floating origin
+
+World (scene-space) positions live in **f64** — `BodyRuntime::positions`, the
+`WorldPosition` component, and `OrbitCameraState::target`/`free_position`. Only offsets from
+the `RenderOrigin` resource are ever rounded to f32. `camera.rs:update_camera_transform`
+sets the origin to the camera's world position each frame (so the camera `Transform` has
+zero translation), and `render.rs:apply_render_origin` (in `PostUpdate`, before transform
+propagation) writes `Transform::translation = WorldPosition - RenderOrigin` for every
+follower entity. Without this, f32 world coordinates at Voyager's ~42 000 units snap to a
+0.004-unit grid (~11 cm on the probe model), which shredded its dish and lattice boom.
+
+Rules that follow from it:
+
+- Systems that move something with the simulation write its `WorldPosition`, never
+  `Transform::translation` directly (rotation/scale stay on `Transform`).
+- Anything drawn or computed in render space must subtract `RenderOrigin` in f64 first:
+  the trail/orbit gizmos do, and run `.after(update_camera_transform)` so they use this
+  frame's origin.
+- **The Sun is not at the render origin.** The custom WGSL shaders receive its render-space
+  position in a `sun_position` uniform (`render.rs:sync_shader_sun_positions`) rather
+  than assuming `(0, 0, 0)`.
+- The sky sphere deliberately has no `WorldPosition`: left at the render origin, it is
+  always centred on the camera.
 
 ### Horizons sync
 
