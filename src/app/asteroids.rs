@@ -12,7 +12,9 @@
 //! The orbital elements are deterministic for a given seed so the belt
 //! looks the same across runs.
 
-use super::types::{AU_TO_SCENE_UNITS, AppPaths, RenderSettings, SECONDS_PER_DAY, SimulationState};
+use super::types::{
+    AU_TO_SCENE_UNITS, AppPaths, RenderSettings, SECONDS_PER_DAY, SimulationState, WorldPosition,
+};
 use super::util::{eclipj2000_to_scene, random01};
 use bevy::asset::RenderAssetUsages;
 use bevy::math::DVec3;
@@ -202,10 +204,11 @@ pub(super) fn spawn_asteroid_belt(
             Mesh3d(mesh_handles[variant].clone()),
             MeshMaterial3d(asteroid_material.clone()),
             Transform {
-                translation: Vec3::ZERO, // overwritten on first frame
                 rotation: initial_rotation,
                 scale: Vec3::new(scale_x, scale_y, scale_z),
+                ..default()
             },
+            WorldPosition::default(), // overwritten on first frame
             AsteroidEntity {
                 index: index as u32,
             },
@@ -223,7 +226,7 @@ pub(super) fn update_asteroid_positions(
     simulation_state: Res<SimulationState>,
     belt: Option<Res<AsteroidBelt>>,
     render_settings: Res<RenderSettings>,
-    mut query: Query<(&AsteroidEntity, &mut Transform)>,
+    mut query: Query<(&AsteroidEntity, &mut Transform, &mut WorldPosition)>,
 ) {
     let Some(belt) = belt else {
         return;
@@ -239,15 +242,13 @@ pub(super) fn update_asteroid_positions(
         time.delta_secs() * simulation_state.simulation_rate as f32
     };
 
-    for (entity, mut transform) in &mut query {
+    for (entity, mut transform, mut world_position) in &mut query {
         let orbit = &belt.orbits[entity.index as usize];
         let position_au = kepler_position(orbit, elapsed_seconds);
-        let scene_pos = eclipj2000_to_scene(
+        world_position.0 = eclipj2000_to_scene(
             [position_au.x, position_au.y, position_au.z],
             AU_TO_SCENE_UNITS,
         );
-        transform.translation =
-            Vec3::new(scene_pos.x as f32, scene_pos.y as f32, scene_pos.z as f32);
 
         if frame_simulation_seconds != 0.0 {
             transform.rotate_local_y(orbit.spin * frame_simulation_seconds);

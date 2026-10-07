@@ -5,7 +5,7 @@ use super::types::{
     CloudLayer, CloudOf, EphemerisResource, HorizonsHttpClient, HorizonsSyncResult,
     HorizonsSyncState, HorizonsSyncTaskInput, HorizonsTargetSample, KM_PER_AU, LightingRig,
     MainCamera, PlanetRing, PlanetTextureEntry, PlanetTextureRegistry, RingOf, StarsBackdrop,
-    TextureStatus, model_scale,
+    TextureStatus, WorldPosition, model_scale,
 };
 use super::util::{
     color_from_rgba, eclipj2000_to_scene, equirectangular_to_cubemap_image, linear_from_rgb,
@@ -131,7 +131,10 @@ pub(super) fn setup_scene(
                 shadow_maps_enabled: true,
                 ..default()
             },
-            Transform::from_translation(Vec3::ZERO),
+            Transform::default(),
+            // The Sun sits at the world origin, which is not the render
+            // origin — `apply_render_origin` places it relative to the camera.
+            WorldPosition::default(),
         ))
         .id();
 
@@ -165,6 +168,7 @@ pub(super) fn setup_scene(
             commands.spawn((
                 WorldAssetRoot(asset_server.load(GltfAssetLabel::Scene(0).from_asset(model_file))),
                 Transform::from_scale(Vec3::splat(model_scale(spec))),
+                WorldPosition::default(),
                 BodyEntity { index },
             ));
             continue;
@@ -224,6 +228,7 @@ pub(super) fn setup_scene(
                     Vec3::Z,
                     Vec3::from_array(spec.pole_direction).normalize(),
                 )),
+                WorldPosition::default(),
                 BodyEntity { index },
             ))
             .id();
@@ -248,12 +253,15 @@ pub(super) fn setup_scene(
                     8.0,
                     1.6,
                 ),
+                // Set every frame by `sync_shader_sun_positions`.
+                sun_position: Vec4::ZERO,
             });
 
             commands.spawn((
                 Mesh3d(atmosphere_mesh),
                 MeshMaterial3d(atmosphere_material),
                 Transform::default(),
+                WorldPosition::default(),
                 AtmosphereLayer,
                 AtmosphereOf { index },
                 NotShadowCaster,
@@ -299,6 +307,7 @@ pub(super) fn setup_scene(
                             Vec3::Z,
                             Vec3::from_array(spec.pole_direction).normalize(),
                         )),
+                        WorldPosition::default(),
                         CloudLayer,
                         CloudOf { index },
                         NotShadowCaster,
@@ -343,12 +352,15 @@ pub(super) fn setup_scene(
                 // Updated each frame from BodyRuntime::positions.
                 planet_position: Vec4::ZERO,
                 color_texture: ring_texture,
+                // Set every frame by `sync_shader_sun_positions`.
+                sun_position: Vec4::ZERO,
             });
             let tilt = Quat::from_rotation_x(ring.axial_tilt_degrees.to_radians());
             commands.spawn((
                 Mesh3d(ring_handle),
                 MeshMaterial3d(ring_material),
                 Transform::from_rotation(tilt),
+                WorldPosition::default(),
                 PlanetRing,
                 RingOf { index },
                 NotShadowCaster,

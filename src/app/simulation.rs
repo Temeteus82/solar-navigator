@@ -3,7 +3,7 @@ use super::types::{
     AU_TO_SCENE_UNITS, AtmosphereLayer, AtmosphereOf, BODIES, BodyEntity, BodyRuntime, BodyTrails,
     CLOUD_SUPERROTATION_RADIANS_PER_SECOND, CameraMode, CloudLayer, CloudOf, EphemerisResource,
     HorizonsSyncState, KM_PER_AU, MAX_SIMULATION_RATE_MULTIPLIER, MIN_SIMULATION_RATE_MULTIPLIER,
-    OrbitCameraState, PlanetRing, RingOf, SECONDS_PER_DAY, SimulationState,
+    OrbitCameraState, PlanetRing, RingOf, SECONDS_PER_DAY, SimulationState, WorldPosition,
 };
 use super::util::eclipj2000_to_scene;
 use crate::ephemeris::{
@@ -61,7 +61,7 @@ pub(super) fn keyboard_controls(
         simulation_state.jump_request = None;
         orbit_camera.mode = CameraMode::Orbit;
         orbit_camera.flight = None;
-        orbit_camera.target = Vec3::ZERO;
+        orbit_camera.target = DVec3::ZERO;
         orbit_camera.distance = 188.3;
         trails.clear();
     }
@@ -83,7 +83,7 @@ pub(super) fn update_body_positions(
     ephemeris: NonSend<EphemerisResource>,
     horizons_sync: Res<HorizonsSyncState>,
     mut body_runtime: ResMut<BodyRuntime>,
-    mut body_query: Query<(&BodyEntity, &mut Transform)>,
+    mut body_query: Query<(&BodyEntity, &mut Transform, &mut WorldPosition)>,
 ) {
     let au_to_scene_units = AU_TO_SCENE_UNITS;
     let frame_simulation_seconds = if simulation_state.paused {
@@ -120,11 +120,11 @@ pub(super) fn update_body_positions(
         au_to_scene_units,
     );
 
-    for (body, mut transform) in &mut body_query {
+    for (body, mut transform, mut world_position) in &mut body_query {
         let spec = BODIES[body.index];
         let scene_position = scene_positions[body.index];
 
-        transform.translation = scene_position.as_vec3();
+        world_position.0 = scene_position;
         if spec.model_file.is_some() {
             // Spacecraft hold attitude rather than spin: point the model's +Y
             // axis (Voyager's high-gain dish) back at the Sun — Earth, at
@@ -242,11 +242,11 @@ fn spin_step_radians(spin_radians_per_second: f32, frame_seconds: f32) -> f32 {
 
 pub(super) fn sync_atmosphere_positions(
     body_runtime: Res<BodyRuntime>,
-    mut atmosphere_query: Query<(&AtmosphereOf, &mut Transform), With<AtmosphereLayer>>,
+    mut atmosphere_query: Query<(&AtmosphereOf, &mut WorldPosition), With<AtmosphereLayer>>,
 ) {
-    for (atmosphere, mut transform) in &mut atmosphere_query {
-        if let Some(position) = body_runtime.positions.get(atmosphere.index) {
-            transform.translation = position.as_vec3();
+    for (atmosphere, mut world_position) in &mut atmosphere_query {
+        if let Some(&position) = body_runtime.positions.get(atmosphere.index) {
+            world_position.0 = position;
         }
     }
 }
@@ -258,7 +258,7 @@ pub(super) fn sync_cloud_layers(
     time: Res<Time>,
     simulation_state: Res<SimulationState>,
     body_runtime: Res<BodyRuntime>,
-    mut cloud_query: Query<(&CloudOf, &mut Transform), With<CloudLayer>>,
+    mut cloud_query: Query<(&CloudOf, &mut Transform, &mut WorldPosition), With<CloudLayer>>,
 ) {
     let frame_simulation_seconds = if simulation_state.paused {
         0.0
@@ -270,9 +270,9 @@ pub(super) fn sync_cloud_layers(
         frame_simulation_seconds,
     );
 
-    for (cloud, mut transform) in &mut cloud_query {
-        if let Some(position) = body_runtime.positions.get(cloud.index) {
-            transform.translation = position.as_vec3();
+    for (cloud, mut transform, mut world_position) in &mut cloud_query {
+        if let Some(&position) = body_runtime.positions.get(cloud.index) {
+            world_position.0 = position;
         }
         if spin_step != 0.0 {
             transform.rotate_local_z(spin_step);
@@ -282,18 +282,18 @@ pub(super) fn sync_cloud_layers(
 
 pub(super) fn sync_ring_positions(
     body_runtime: Res<BodyRuntime>,
-    mut ring_query: Query<(&RingOf, &mut Transform), With<PlanetRing>>,
+    mut ring_query: Query<(&RingOf, &mut WorldPosition), With<PlanetRing>>,
 ) {
-    for (ring, mut transform) in &mut ring_query {
-        if let Some(position) = body_runtime.positions.get(ring.index) {
-            transform.translation = position.as_vec3();
+    for (ring, mut world_position) in &mut ring_query {
+        if let Some(&position) = body_runtime.positions.get(ring.index) {
+            world_position.0 = position;
         }
     }
 }
 
-/// Pushes the parent planet's current world-space position into each ring
-/// material's `planet_position` uniform so the WGSL shader can compute the
-/// cylindrical eclipse cast by the planet onto the ring disc.
+/// Pushes the parent planet's current world-space (heliocentric) position
+/// into each ring material's `planet_position` uniform so the WGSL shader can
+/// compute the cylindrical eclipse cast by the planet onto the ring disc.
 pub(super) fn sync_ring_material_uniforms(
     body_runtime: Res<BodyRuntime>,
     mut ring_materials: ResMut<Assets<PlanetRingMaterial>>,

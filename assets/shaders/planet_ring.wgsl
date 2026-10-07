@@ -12,10 +12,12 @@
 // z = specular strength
 // w = ambient floor
 @group(#{MATERIAL_BIND_GROUP}) @binding(2) var<uniform> lighting: vec4<f32>;
-// xyz = parent planet world-space position (sun is fixed at world origin)
+// xyz = parent planet heliocentric position (relative to the Sun)
 @group(#{MATERIAL_BIND_GROUP}) @binding(3) var<uniform> planet_position: vec4<f32>;
 @group(#{MATERIAL_BIND_GROUP}) @binding(4) var color_texture: texture_2d<f32>;
 @group(#{MATERIAL_BIND_GROUP}) @binding(5) var color_sampler: sampler;
+// xyz = the Sun's render-space position (floating origin: not the world origin)
+@group(#{MATERIAL_BIND_GROUP}) @binding(6) var<uniform> sun_position: vec4<f32>;
 
 fn safe_normalize(v: vec3<f32>) -> vec3<f32> {
     let len2 = max(dot(v, v), 1e-6);
@@ -30,16 +32,17 @@ fn sigmoid_terminator(x: f32, k: f32) -> f32 {
 
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
-    let world_pos = in.world_position.xyz;
+    let render_pos = in.world_position.xyz;
+    // Everything below works heliocentrically: the Sun at the origin.
+    let world_pos = render_pos - sun_position.xyz;
     // Ring mesh normals point along +Y in local space; the ring is two-sided,
     // so use the absolute dot-product for lighting and pick whichever face
     // is currently pointing toward the sun.
     let raw_normal = safe_normalize(in.world_normal);
 
-    // Sun is fixed at the world origin (see app::setup::setup_scene).
     let to_sun_vec = -world_pos;
     let to_sun = safe_normalize(to_sun_vec);
-    let to_view = safe_normalize(view.world_position - world_pos);
+    let to_view = safe_normalize(view.world_position - render_pos);
 
     // Sample the color/alpha strip radially. ring_mesh emits UV.y = 0 at the
     // inner edge and 1 at the outer edge; the standard solarsystemscope ring

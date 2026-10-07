@@ -2,8 +2,9 @@ use super::types::{
     BODIES, BodyRuntime, CameraFlight, CameraMode, FREE_CAMERA_BOOST_MULTIPLIER,
     FREE_CAMERA_LOOK_SENSITIVITY, FREE_CAMERA_MAX_SPEED, FREE_CAMERA_MIN_SPEED,
     FREE_CAMERA_SPEED_FACTOR, MainCamera, ORBIT_KEY_ROTATE_SPEED, ORBIT_KEY_ZOOM_RATE,
-    OrbitCameraState, SimulationState,
+    OrbitCameraState, RenderOrigin, SimulationState,
 };
+use bevy::math::DVec3;
 use bevy::prelude::*;
 use bevy_egui::input::EguiWantsInput;
 use std::f32::consts::FRAC_PI_2;
@@ -26,16 +27,16 @@ pub(super) fn handle_jump_requests(
     simulation_state.selected_body_index = Some(target_index);
     let target_distance = compute_target_distance_for_body(BODIES[target_index].visual_radius);
 
-    if let Some(target_position) = body_runtime.positions.get(target_index) {
-        let target_position = target_position.as_vec3();
+    if let Some(&target_position) = body_runtime.positions.get(target_index) {
         orbit_camera.target = target_position;
+        // Only directions are derived from these, so f32 is precise enough.
         match parent_body_index(target_index).and_then(|i| body_runtime.positions.get(i)) {
             Some(parent_position) => orient_camera_away_from_parent(
                 &mut orbit_camera,
-                target_position,
+                target_position.as_vec3(),
                 parent_position.as_vec3(),
             ),
-            None => orient_camera_toward_sunward(&mut orbit_camera, target_position),
+            None => orient_camera_toward_sunward(&mut orbit_camera, target_position.as_vec3()),
         }
     }
     orbit_camera.distance = target_distance;
@@ -76,7 +77,9 @@ pub(super) fn toggle_camera_mode_impl(
             // Seed the fly-cam from the orbit camera's current world pose so
             // the switch is invisible until the user moves.
             let position = orbit_camera_world_position(orbit_camera);
-            let look_dir = (orbit_camera.target - position).normalize_or_zero();
+            let look_dir = (orbit_camera.target - position)
+                .as_vec3()
+                .normalize_or_zero();
             let (yaw, pitch) = look_angles_from_direction(look_dir);
             orbit_camera.free_position = position;
             orbit_camera.free_yaw = yaw;
@@ -93,8 +96,8 @@ pub(super) fn toggle_camera_mode_impl(
                 .or_else(|| nearest_body_index(body_runtime, orbit_camera.free_position));
 
             if let Some(index) = anchor {
-                let target = body_runtime.positions[index].as_vec3();
-                let offset = orbit_camera.free_position - target;
+                let target = body_runtime.positions[index];
+                let offset = (orbit_camera.free_position - target).as_vec3();
                 let distance = offset
                     .length()
                     .clamp(orbit_camera.min_distance, orbit_camera.max_distance);
@@ -201,7 +204,7 @@ pub(super) fn orbit_camera_input(
         let right = forward.cross(Vec3::Y).normalize_or_zero();
         let up = Vec3::Y;
         let pan_scale = (orbit_camera.distance * 0.0024).max(0.0005);
-        orbit_camera.target += (-right * delta.x + up * delta.y) * pan_scale;
+        orbit_camera.target += ((-right * delta.x + up * delta.y) * pan_scale).as_dvec3();
         user_override = true;
     }
 
@@ -298,7 +301,7 @@ pub(super) fn free_camera_input(
         .clamp(FREE_CAMERA_MIN_SPEED, FREE_CAMERA_MAX_SPEED)
         * boost;
 
-    orbit_camera.free_position += movement * speed * time.delta_secs();
+    orbit_camera.free_position += (movement * speed * time.delta_secs()).as_dvec3();
 }
 
 pub(super) fn track_selected_body(
@@ -323,11 +326,8 @@ pub(super) fn track_selected_body(
         return;
     };
 
-    orbit_camera.target = tracked_target_after_step(
-        orbit_camera.target,
-        target_position.as_vec3(),
-        time.delta_secs(),
-    );
+    orbit_camera.target =
+        tracked_target_after_step(orbit_camera.target, target_position, time.delta_secs());
 }
 
 pub(super) fn apply_camera_flight(
@@ -343,11 +343,7 @@ pub(super) fn apply_camera_flight(
         return;
     };
 
-    let Some(target_at) = body_runtime
-        .positions
-        .get(flight.target_index)
-        .map(|value| value.as_vec3())
-    else {
+    let Some(&target_at) = body_runtime.positions.get(flight.target_index) else {
         orbit_camera.flight = None;
         return;
     };
@@ -356,7 +352,7 @@ pub(super) fn apply_camera_flight(
     let at_lerp = 1.0 - (-4.0 * dt).exp();
     let dist_lerp = 1.0 - (-3.0 * dt).exp();
 
-    orbit_camera.target = orbit_camera.target.lerp(target_at, at_lerp);
+    orbit_camera.target = orbit_camera.target.lerp(target_at, f64::from(at_lerp));
     orbit_camera.distance += (flight.target_distance - orbit_camera.distance) * dist_lerp;
 
     if orbit_camera.target.distance(target_at) < 0.05
@@ -366,30 +362,32 @@ pub(super) fn apply_camera_flight(
     }
 }
 
+/// Builds the camera's final pose and makes its world position the floating
+/// origin (`RenderOrigin`): the camera itself always renders at `(0, 0, 0)`,
+/// and `render::apply_render_origin` places everything else relative to it.
 pub(super) fn update_camera_transform(
     mut camera_query: Query<&mut Transform, (With<MainCamera>, With<Camera3d>)>,
     orbit_camera: Res<OrbitCameraState>,
+    mut render_origin: ResMut<RenderOrigin>,
 ) {
     let Ok(mut transform) = camera_query.single_mut() else {
         return;
     };
 
-    let (translation, look_at_point) = match orbit_camera.mode {
-        CameraMode::Orbit => (
-            orbit_camera_world_position(&orbit_camera),
-            orbit_camera.target,
-        ),
-        CameraMode::Free => {
-            let forward =
-                direction_from_look_angles(orbit_camera.free_yaw, orbit_camera.free_pitch);
-            (
-                orbit_camera.free_position,
-                orbit_camera.free_position + forward,
-            )
+    let (eye, forward) = match orbit_camera.mode {
+        CameraMode::Orbit => {
+            let eye = orbit_camera_world_position(&orbit_camera);
+            // Differenced in f64, so the direction stays exact far from the Sun.
+            (eye, (orbit_camera.target - eye).as_vec3())
         }
+        CameraMode::Free => (
+            orbit_camera.free_position,
+            direction_from_look_angles(orbit_camera.free_yaw, orbit_camera.free_pitch),
+        ),
     };
 
-    *transform = Transform::from_translation(translation).looking_at(look_at_point, Vec3::Y);
+    render_origin.0 = eye;
+    *transform = Transform::IDENTITY.looking_to(forward, Vec3::Y);
 }
 
 fn compute_target_distance_for_body(visual_radius: f32) -> f32 {
@@ -397,11 +395,11 @@ fn compute_target_distance_for_body(visual_radius: f32) -> f32 {
 }
 
 /// World-space position of the orbit camera from its spherical parameters.
-fn orbit_camera_world_position(orbit_camera: &OrbitCameraState) -> Vec3 {
+fn orbit_camera_world_position(orbit_camera: &OrbitCameraState) -> DVec3 {
     let x = orbit_camera.distance * orbit_camera.pitch.cos() * orbit_camera.yaw.sin();
     let y = orbit_camera.distance * orbit_camera.pitch.sin();
     let z = orbit_camera.distance * orbit_camera.pitch.cos() * orbit_camera.yaw.cos();
-    orbit_camera.target + Vec3::new(x, y, z)
+    orbit_camera.target + Vec3::new(x, y, z).as_dvec3()
 }
 
 /// Unit look direction from yaw/pitch (matches the orbit camera's angle
@@ -425,20 +423,20 @@ fn look_angles_from_direction(dir: Vec3) -> (f32, f32) {
 }
 
 /// Index of the body whose scene position is closest to `position`, if any.
-fn nearest_body_index(body_runtime: &BodyRuntime, position: Vec3) -> Option<usize> {
+fn nearest_body_index(body_runtime: &BodyRuntime, position: DVec3) -> Option<usize> {
     body_runtime
         .positions
         .iter()
         .enumerate()
-        .map(|(index, p)| (index, p.as_vec3().distance_squared(position)))
+        .map(|(index, p)| (index, p.distance_squared(position)))
         .min_by(|a, b| a.1.total_cmp(&b.1))
         .map(|(index, _)| index)
 }
 
 /// Distance from `position` to the nearest body center (0 if there are none).
-fn nearest_body_distance(body_runtime: &BodyRuntime, position: Vec3) -> f32 {
+fn nearest_body_distance(body_runtime: &BodyRuntime, position: DVec3) -> f32 {
     nearest_body_index(body_runtime, position)
-        .map(|index| body_runtime.positions[index].as_vec3().distance(position))
+        .map(|index| body_runtime.positions[index].distance(position) as f32)
         .unwrap_or(0.0)
 }
 
@@ -547,15 +545,14 @@ fn set_orbit_angles(orbit_camera: &mut OrbitCameraState, direction: Vec3) {
     }
 }
 
-fn tracked_target_after_step(current: Vec3, desired: Vec3, delta_seconds: f32) -> Vec3 {
-    let lerp_factor = 1.0 - (-8.0 * delta_seconds).exp();
+fn tracked_target_after_step(current: DVec3, desired: DVec3, delta_seconds: f32) -> DVec3 {
+    let lerp_factor = 1.0 - (-8.0 * f64::from(delta_seconds)).exp();
     current.lerp(desired, lerp_factor)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bevy::math::DVec3;
 
     #[test]
     fn compute_target_distance_for_body_clamps_to_expected_bounds() {
@@ -638,9 +635,9 @@ mod tests {
             distance: 10.0,
             min_distance: 1.0,
             max_distance: 100.0,
-            target: Vec3::ZERO,
+            target: DVec3::ZERO,
             flight: None,
-            free_position: Vec3::ZERO,
+            free_position: DVec3::ZERO,
             free_yaw: 0.0,
             free_pitch: 0.0,
         };
@@ -691,9 +688,9 @@ mod tests {
             distance: 10.0,
             min_distance: 1.0,
             max_distance: 100.0,
-            target: moon_position,
+            target: moon_position.as_dvec3(),
             flight: None,
-            free_position: Vec3::ZERO,
+            free_position: DVec3::ZERO,
             free_yaw: 0.0,
             free_pitch: 0.0,
         };
@@ -706,7 +703,7 @@ mod tests {
 
         // The planet should sit almost exactly along the camera's gaze toward
         // the moon (i.e. visible behind it), not off to the side.
-        let camera_position = orbit_camera_world_position(&camera);
+        let camera_position = orbit_camera_world_position(&camera).as_vec3();
         let to_moon = (moon_position - camera_position).normalize();
         let to_planet = (planet_position - camera_position).normalize();
         assert!(
@@ -717,8 +714,8 @@ mod tests {
 
     #[test]
     fn tracked_target_after_step_moves_toward_desired_target() {
-        let current = Vec3::new(0.0, 0.0, 0.0);
-        let desired = Vec3::new(10.0, -2.0, 4.0);
+        let current = DVec3::new(0.0, 0.0, 0.0);
+        let desired = DVec3::new(10.0, -2.0, 4.0);
         let next = tracked_target_after_step(current, desired, 0.1);
 
         assert!(next.distance(current) > 0.0);
@@ -727,9 +724,9 @@ mod tests {
 
     #[test]
     fn tracked_target_after_step_reaches_desired_on_large_delta() {
-        let desired = Vec3::new(10.0, -2.0, 4.0);
+        let desired = DVec3::new(10.0, -2.0, 4.0);
         assert_eq!(
-            tracked_target_after_step(Vec3::ZERO, desired, 100.0),
+            tracked_target_after_step(DVec3::ZERO, desired, 100.0),
             desired
         );
     }
@@ -761,9 +758,9 @@ mod tests {
                 DVec3::new(-50.0, 0.0, 0.0),
             ],
         };
-        let nearest = nearest_body_index(&body_runtime, Vec3::new(6.0, 0.0, 0.0));
+        let nearest = nearest_body_index(&body_runtime, DVec3::new(6.0, 0.0, 0.0));
         assert_eq!(nearest, Some(1));
-        let distance = nearest_body_distance(&body_runtime, Vec3::new(6.0, 0.0, 0.0));
+        let distance = nearest_body_distance(&body_runtime, DVec3::new(6.0, 0.0, 0.0));
         assert!((distance - 1.0).abs() < 1e-5);
     }
 
@@ -772,7 +769,7 @@ mod tests {
         let body_runtime = BodyRuntime {
             positions: Vec::new(),
         };
-        assert_eq!(nearest_body_index(&body_runtime, Vec3::ZERO), None);
-        assert_eq!(nearest_body_distance(&body_runtime, Vec3::ZERO), 0.0);
+        assert_eq!(nearest_body_index(&body_runtime, DVec3::ZERO), None);
+        assert_eq!(nearest_body_distance(&body_runtime, DVec3::ZERO), 0.0);
     }
 }

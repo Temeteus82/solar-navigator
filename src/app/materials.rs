@@ -13,6 +13,11 @@ pub(super) struct PlanetAtmosphereMaterial {
     pub(super) tint: LinearRgba,
     #[uniform(1)]
     pub(super) params: Vec4,
+    /// xyz = the Sun's render-space position (it sits at `-RenderOrigin`
+    /// under the floating origin); w unused. Refreshed every frame by
+    /// `render::sync_shader_sun_positions`.
+    #[uniform(2)]
+    pub(super) sun_position: Vec4,
 }
 
 impl Material for PlanetAtmosphereMaterial {
@@ -49,9 +54,11 @@ impl Material for PlanetAtmosphereMaterial {
 /// cylindrical eclipse from the parent planet, plus forward / back scatter
 /// terms that capture the way real ring particles respond to the sun.
 ///
-/// Coordinate convention: the sun is a point light fixed at the world
-/// origin (see `app::setup`). `planet_position.xyz` is the world-space
-/// position of the parent planet's centre, updated each frame from
+/// Coordinate convention: the shader works heliocentrically. `sun_position`
+/// is the Sun's render-space position (refreshed each frame by
+/// `render::sync_shader_sun_positions`), which it subtracts from each
+/// fragment's render-space position. `planet_position.xyz` is the parent
+/// planet's heliocentric (world-space) centre, updated each frame from
 /// `BodyRuntime::positions` by `simulation::sync_ring_material_uniforms`.
 #[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
 pub(super) struct PlanetRingMaterial {
@@ -75,6 +82,9 @@ pub(super) struct PlanetRingMaterial {
     #[texture(4)]
     #[sampler(5)]
     pub(super) color_texture: Handle<Image>,
+    /// xyz = the Sun's render-space position; w unused.
+    #[uniform(6)]
+    pub(super) sun_position: Vec4,
 }
 
 impl Material for PlanetRingMaterial {
