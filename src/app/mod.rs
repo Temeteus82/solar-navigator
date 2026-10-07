@@ -150,6 +150,7 @@ pub(crate) fn run() {
                     .after(camera::apply_camera_flight),
                 render::sync_shader_sun_positions.after(camera::update_camera_transform),
                 render::apply_lighting_preset,
+                render::scale_view_dependent_effects,
                 render::sync_visibility_toggles,
                 render::record_body_trails,
                 render::draw_body_trails.after(camera::update_camera_transform),

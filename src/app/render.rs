@@ -1,11 +1,14 @@
+use super::camera::view_focus_distance;
 use super::materials::{PlanetAtmosphereMaterial, PlanetRingMaterial};
 use super::types::{
     AU_TO_SCENE_UNITS, AppStatus, AtmosphereLayer, BODIES, BodyRuntime, BodyTrails, CameraMode,
-    LightingRig, OrbitCameraState, PlanetRing, RenderOrigin, RenderSettings, SimulationState,
-    StarsBackdrop, TRAIL_MAX_POINTS, WorldPosition,
+    LightingRig, MainCamera, OrbitCameraState, PlanetRing, RenderOrigin, RenderSettings,
+    SimulationState, StarsBackdrop, TRAIL_MAX_POINTS, WorldPosition,
 };
 use super::util::format_simulation_speed;
+use bevy::light::{CascadeShadowConfig, CascadeShadowConfigBuilder};
 use bevy::math::DVec3;
+use bevy::pbr::{ContactShadows, ScreenSpaceAmbientOcclusion};
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use std::f64::consts::TAU;
@@ -60,6 +63,80 @@ pub(super) fn apply_lighting_preset(
     solar_key.shadow_maps_enabled = false;
 
     ambient.brightness = 0.25;
+}
+
+/// Bevy's default first shadow cascade ends this far from the camera. Its
+/// world-unit defaults for shadow cascades, depth bias, SSAO and contact
+/// shadows are all tuned for a view at roughly this scale.
+const DEFAULT_FIRST_CASCADE_FAR_BOUND: f32 = 10.0;
+
+/// The first (sharpest) shadow cascade reaches this multiple of the focus
+/// distance, so it covers the inspected body and whatever casts onto it.
+const FIRST_CASCADE_FOCUS_MULTIPLE: f32 = 1.5;
+
+/// Factor by which Bevy's world-unit defaults are scaled for a viewer
+/// `focus_distance` from their subject.
+fn view_effect_scale(focus_distance: f32) -> f32 {
+    focus_distance * FIRST_CASCADE_FOCUS_MULTIPLE / DEFAULT_FIRST_CASCADE_FAR_BOUND
+}
+
+/// Scales the sun's shadow cascades and depth bias, SSAO thickness and
+/// contact-shadow ray length with the camera's focus distance.
+///
+/// Bevy's defaults are fixed world-unit values tuned for a ~10-unit view, but
+/// here the view spans from Voyager close-ups (~0.036 units per metre, so the
+/// default 0.02 depth bias alone is ~56 cm on the model) to the whole solar
+/// system. Scaling the entire default set uniformly keeps its tuned ratios —
+/// e.g. depth bias ≈ 3 shadow-map texels — at every zoom level, and puts the
+/// sharpest cascade's texels where the viewer is actually looking.
+pub(super) fn scale_view_dependent_effects(
+    lighting_rig: Res<LightingRig>,
+    orbit_camera: Res<OrbitCameraState>,
+    body_runtime: Res<BodyRuntime>,
+    mut lights: Query<(&mut DirectionalLight, &mut CascadeShadowConfig)>,
+    mut cameras: Query<(&mut ScreenSpaceAmbientOcclusion, &mut ContactShadows), With<MainCamera>>,
+) {
+    let scale = view_effect_scale(view_focus_distance(&orbit_camera, &body_runtime));
+    if !scale.is_finite() || scale <= 0.0 {
+        return;
+    }
+
+    // Compare before writing: a write marks the component changed, and the
+    // focus distance is often static between frames.
+    if let Ok((mut light, mut cascades)) = lights.get_mut(lighting_rig.sky_fill) {
+        let depth_bias = DirectionalLight::DEFAULT_SHADOW_DEPTH_BIAS * scale;
+        if light.shadow_depth_bias != depth_bias {
+            light.shadow_depth_bias = depth_bias;
+        }
+        let defaults = CascadeShadowConfigBuilder::default();
+        let scaled: CascadeShadowConfig = CascadeShadowConfigBuilder {
+            minimum_distance: defaults.minimum_distance * scale,
+            maximum_distance: defaults.maximum_distance * scale,
+            first_cascade_far_bound: defaults.first_cascade_far_bound * scale,
+            ..defaults
+        }
+        .into();
+        if cascades.bounds != scaled.bounds || cascades.minimum_distance != scaled.minimum_distance
+        {
+            *cascades = scaled;
+        }
+    }
+
+    for (mut ssao, mut contact_shadows) in &mut cameras {
+        let thickness = ScreenSpaceAmbientOcclusion::default().constant_object_thickness * scale;
+        if ssao.constant_object_thickness != thickness {
+            ssao.constant_object_thickness = thickness;
+        }
+        let defaults = ContactShadows::default();
+        let (contact_thickness, contact_length) =
+            (defaults.thickness * scale, defaults.length * scale);
+        if contact_shadows.thickness != contact_thickness
+            || contact_shadows.length != contact_length
+        {
+            contact_shadows.thickness = contact_thickness;
+            contact_shadows.length = contact_length;
+        }
+    }
 }
 
 #[allow(clippy::type_complexity)]
@@ -312,5 +389,23 @@ mod tests {
             origin.as_vec3(),
             "test premise: f32 world coordinates cannot resolve the offset"
         );
+    }
+
+    #[test]
+    fn view_effect_scale_matches_bevy_defaults_at_their_reference_view() {
+        // A view whose first cascade lands on Bevy's default bound keeps
+        // Bevy's defaults unchanged.
+        let reference_focus = DEFAULT_FIRST_CASCADE_FAR_BOUND / FIRST_CASCADE_FOCUS_MULTIPLE;
+        assert!((view_effect_scale(reference_focus) - 1.0).abs() < 1e-6);
+        assert_eq!(
+            CascadeShadowConfigBuilder::default().first_cascade_far_bound,
+            DEFAULT_FIRST_CASCADE_FAR_BOUND,
+            "Bevy's default first cascade bound moved; retune the reference"
+        );
+    }
+
+    #[test]
+    fn view_effect_scale_is_proportional_to_focus_distance() {
+        assert!((view_effect_scale(0.6) / view_effect_scale(6.0) - 0.1).abs() < 1e-6);
     }
 }

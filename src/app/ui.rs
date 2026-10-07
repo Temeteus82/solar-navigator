@@ -253,8 +253,8 @@ pub(super) fn draw_side_panel(
                                 // rather than 11pt `small` for legibility at desk
                                 // viewing distance (WCAG 1.4.4 / readability).
                                 ui.label(format!(
-                                    "Radius: {} km",
-                                    format_large(spec.physical_radius_km)
+                                    "Radius: {}",
+                                    format_radius(spec.physical_radius_km)
                                 ));
                                 ui.label(format!("Mass: {:.3e} kg", spec.mass_kg));
                                 if let Some(period_days) = spec.orbital_period_days {
@@ -391,6 +391,16 @@ fn days_in_month(year: i32, month: u32) -> u32 {
         .unwrap_or(31)
 }
 
+/// Radius with a unit that suits its size: metres below a kilometre (Voyager's
+/// 14 m bounding radius would otherwise read "0.01 km"), kilometres above.
+fn format_radius(radius_km: f64) -> String {
+    if radius_km < 1.0 {
+        format!("{:.0} m", radius_km * 1_000.0)
+    } else {
+        format!("{} km", format_large(radius_km))
+    }
+}
+
 fn format_large(value: f64) -> String {
     if value >= 10_000.0 {
         format!("{value:.0}")
@@ -398,5 +408,23 @@ fn format_large(value: f64) -> String {
         format!("{value:.1}")
     } else {
         format!("{value:.2}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_radius;
+
+    #[test]
+    fn format_radius_uses_metres_below_a_kilometre() {
+        assert_eq!(format_radius(0.014), "14 m");
+        assert_eq!(format_radius(0.5), "500 m");
+    }
+
+    #[test]
+    fn format_radius_keeps_kilometres_for_bodies() {
+        assert_eq!(format_radius(1.0), "1.00 km");
+        assert_eq!(format_radius(6_371.0), "6371.0 km");
+        assert_eq!(format_radius(696_000.0), "696000 km");
     }
 }

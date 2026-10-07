@@ -440,6 +440,19 @@ fn nearest_body_distance(body_runtime: &BodyRuntime, position: DVec3) -> f32 {
         .unwrap_or(0.0)
 }
 
+/// How far the viewer is from what they are looking at: the orbit distance,
+/// or in Free mode the distance to the nearest body. Sets the world-unit
+/// scale of view-dependent effects (`render::scale_view_dependent_effects`).
+pub(super) fn view_focus_distance(
+    orbit_camera: &OrbitCameraState,
+    body_runtime: &BodyRuntime,
+) -> f32 {
+    match orbit_camera.mode {
+        CameraMode::Orbit => orbit_camera.distance,
+        CameraMode::Free => nearest_body_distance(body_runtime, orbit_camera.free_position),
+    }
+}
+
 /// Index of `index`'s parent body (the planet a moon orbits), if it has one.
 fn parent_body_index(index: usize) -> Option<usize> {
     let parent_name = match BODIES[index].display_name {
