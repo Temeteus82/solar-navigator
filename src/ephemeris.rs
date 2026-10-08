@@ -2,6 +2,7 @@ use chrono::Utc;
 use reqwest::blocking::Client;
 #[cfg(feature = "spice")]
 use spice::SpiceLock;
+use std::f64::consts::TAU;
 use std::path::Path;
 #[cfg(feature = "spice")]
 use std::sync::Mutex;
@@ -37,6 +38,120 @@ const VOYAGER_1_VELOCITY_AU_PER_DAY: [f64; 3] = [
     0.005_675_897_292_261_714,
 ];
 
+// Ceres and Vesta are in no loaded kernel (de440s carries only planets), so
+// even SPICE mode propagates these two-body Keplerian orbits. Osculating
+// heliocentric elements, ecliptic & equinox J2000 (= ECLIPJ2000), from the JPL
+// Small-Body Database (full precision, solution 2021-04-13). Checked against
+// Horizons: ~9 000 km (Ceres) / ~3 000 km (Vesta) at 2026-10-08, growing to
+// ~0.015 AU by 2030 and ~0.006 AU back in 2020 from Jupiter's perturbations,
+// which the Horizons sync corrects at the current date.
+struct KeplerElements {
+    epoch_unix_days: f64,
+    semi_major_axis_au: f64,
+    eccentricity: f64,
+    inclination_deg: f64,
+    ascending_node_deg: f64,
+    arg_perihelion_deg: f64,
+    mean_anomaly_at_epoch_deg: f64,
+    mean_motion_deg_per_day: f64,
+}
+
+const SBDB_ELEMENTS_EPOCH_UNIX_DAYS: f64 = 20_613.0; // JD 2461200.5 TDB, 2026-06-09
+
+const CERES_ELEMENTS: KeplerElements = KeplerElements {
+    epoch_unix_days: SBDB_ELEMENTS_EPOCH_UNIX_DAYS,
+    semi_major_axis_au: 2.765_552_595_034_094,
+    eccentricity: 0.079_692_295_148_165_86,
+    inclination_deg: 10.588_027_801_834_62,
+    ascending_node_deg: 80.248_626_820_432_21,
+    arg_perihelion_deg: 73.294_214_530_215_87,
+    mean_anomaly_at_epoch_deg: 274.419_346_376_134_2,
+    mean_motion_deg_per_day: 0.214_304_450_648_43,
+};
+
+const VESTA_ELEMENTS: KeplerElements = KeplerElements {
+    epoch_unix_days: SBDB_ELEMENTS_EPOCH_UNIX_DAYS,
+    semi_major_axis_au: 2.361_365_965_127_599,
+    eccentricity: 0.090_203_743_828_343_95,
+    inclination_deg: 7.143_925_545_058_711,
+    ascending_node_deg: 103.701_293_265_032,
+    arg_perihelion_deg: 151.468_647_822_156_4,
+    mean_anomaly_at_epoch_deg: 81.190_156_076_869_03,
+    mean_motion_deg_per_day: 0.271_618_361_359_990_9,
+};
+
+fn minor_body_elements(target: &str) -> Option<&'static KeplerElements> {
+    match target {
+        "CERES" => Some(&CERES_ELEMENTS),
+        "VESTA" => Some(&VESTA_ELEMENTS),
+        _ => None,
+    }
+}
+
+fn minor_body_position_au(elements: &KeplerElements, unix_days: f64) -> [f64; 3] {
+    let mean_anomaly = (elements.mean_anomaly_at_epoch_deg
+        + elements.mean_motion_deg_per_day * (unix_days - elements.epoch_unix_days))
+        .to_radians();
+    orbital_position_au(
+        elements.semi_major_axis_au,
+        elements.eccentricity,
+        elements.inclination_deg.to_radians(),
+        elements.ascending_node_deg.to_radians(),
+        elements.arg_perihelion_deg.to_radians(),
+        mean_anomaly,
+    )
+}
+
+/// Heliocentric ECLIPJ2000 position (AU) on a Keplerian ellipse with the given
+/// elements (angles in radians) at `mean_anomaly`.
+#[inline]
+pub fn orbital_position_au(
+    semi_major_axis: f64,
+    eccentricity: f64,
+    inclination: f64,
+    ascending_node: f64,
+    arg_perihelion: f64,
+    mean_anomaly: f64,
+) -> [f64; 3] {
+    let eccentric_anomaly = solve_kepler(mean_anomaly, eccentricity);
+    let (sin_e, cos_e) = eccentric_anomaly.sin_cos();
+
+    // Position in the orbital plane (perifocal frame).
+    let x_perifocal = semi_major_axis * (cos_e - eccentricity);
+    let y_perifocal = semi_major_axis * (1.0 - eccentricity * eccentricity).sqrt() * sin_e;
+
+    // Rotate perifocal → ECLIPJ2000 via (ω, i, Ω) Euler angles.
+    let (sin_w, cos_w) = arg_perihelion.sin_cos();
+    let (sin_i, cos_i) = inclination.sin_cos();
+    let (sin_o, cos_o) = ascending_node.sin_cos();
+
+    [
+        (cos_o * cos_w - sin_o * sin_w * cos_i) * x_perifocal
+            + (-cos_o * sin_w - sin_o * cos_w * cos_i) * y_perifocal,
+        (sin_o * cos_w + cos_o * sin_w * cos_i) * x_perifocal
+            + (-sin_o * sin_w + cos_o * cos_w * cos_i) * y_perifocal,
+        (sin_w * sin_i) * x_perifocal + (cos_w * sin_i) * y_perifocal,
+    ]
+}
+
+/// Newton's-method solve of Kepler's equation `M = E - e·sin(E)`.
+/// 5 iterations is more than enough for `e ≤ 0.2`.
+#[inline]
+fn solve_kepler(mean_anomaly: f64, eccentricity: f64) -> f64 {
+    let m = mean_anomaly.rem_euclid(TAU);
+    let mut e_anom = if eccentricity < 0.8 {
+        m
+    } else {
+        std::f64::consts::PI
+    };
+    for _ in 0..5 {
+        let f = e_anom - eccentricity * e_anom.sin() - m;
+        let f_prime = 1.0 - eccentricity * e_anom.cos();
+        e_anom -= f / f_prime;
+    }
+    e_anom
+}
+
 #[derive(Clone, Copy)]
 struct FallbackOrbit {
     semi_major_axis_au: f64,
@@ -60,7 +175,7 @@ pub struct SpiceEphemeris {
     state: EphemerisState,
     status_line: String,
     // Wall-clock time at construction (simulation day 0), in days since the
-    // Unix epoch — anchors the date-dependent Voyager trajectory.
+    // Unix epoch — anchors the dated Voyager trajectory and minor-body orbits.
     start_unix_days: f64,
 }
 
@@ -221,10 +336,14 @@ impl SpiceEphemeris {
         self.position_au(target, 0.0)
     }
 
-    /// Non-SPICE position: Voyager's dated trajectory, else the analytic orbits.
+    /// Non-SPICE position: Voyager's and the minor bodies' dated orbits, else
+    /// the analytic planet circles.
     fn analytic_position_au(&self, target: &str, elapsed_simulation_days: f64) -> [f64; 3] {
+        let unix_days = self.start_unix_days + elapsed_simulation_days;
         if target == VOYAGER_1_TARGET {
-            voyager_1_position_au(self.start_unix_days + elapsed_simulation_days)
+            voyager_1_position_au(unix_days)
+        } else if let Some(elements) = minor_body_elements(target) {
+            minor_body_position_au(elements, unix_days)
         } else {
             fallback_position_au(target, elapsed_simulation_days)
         }
@@ -545,18 +664,6 @@ fn orbit_for_target(target: &str) -> Option<FallbackOrbit> {
             phase_radians: 1.9,
             inclination_radians: 1.85_f64.to_radians(),
         }),
-        "CERES" => Some(FallbackOrbit {
-            semi_major_axis_au: 2.767,
-            period_days: 1680.0,
-            phase_radians: 0.38,
-            inclination_radians: 10.6_f64.to_radians(),
-        }),
-        "VESTA" => Some(FallbackOrbit {
-            semi_major_axis_au: 2.361,
-            period_days: 1325.0,
-            phase_radians: 1.42,
-            inclination_radians: 7.1_f64.to_radians(),
-        }),
         "JUPITER" | "JUPITER BARYCENTER" => Some(FallbackOrbit {
             semi_major_axis_au: 5.204,
             period_days: 4332.589,
@@ -615,6 +722,53 @@ mod tests {
     use super::*;
 
     const EPS: f64 = 1e-10;
+
+    #[test]
+    fn kepler_solver_converges_for_circular_orbit() {
+        let e = solve_kepler(1.234, 0.0);
+        // For e = 0, E should equal M (mod TAU).
+        assert!((e - 1.234).abs() < 1e-9);
+    }
+
+    #[test]
+    fn kepler_solver_converges_for_moderate_eccentricity() {
+        for &e in &[0.05, 0.10, 0.20] {
+            for k in 0..16 {
+                let m = (k as f64) * (TAU / 16.0);
+                let solved = solve_kepler(m, e);
+                let residual = solved - e * solved.sin() - m.rem_euclid(TAU);
+                assert!(
+                    residual.abs() < 1e-8,
+                    "residual {residual} too high at e={e}, m={m}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn minor_body_orbits_match_horizons_reference_states() {
+        // JPL Horizons heliocentric ECLIPJ2000 positions (AU), 00:00 UT.
+        // The circular stand-ins these orbits replaced put Ceres ~2.9 AU off.
+        let cases = [
+            // 2026-10-08, four months from the elements' epoch: two-body is tight.
+            ("CERES", 20_734.0, [0.207_681, 2.659_549, 0.045_937], 1e-3),
+            ("VESTA", 20_734.0, [2.321_398, 0.765_362, -0.305_392], 1e-3),
+            // 2030-01-01: Jupiter's perturbations accumulate (~0.015 AU measured).
+            ("CERES", 21_915.0, [2.825_734, -0.774_188, -0.544_941], 0.03),
+        ];
+        for (target, unix_days, expected, tolerance_au) in cases {
+            let elements = minor_body_elements(target).unwrap();
+            let actual = minor_body_position_au(elements, unix_days);
+            let error = (0..3)
+                .map(|axis| (actual[axis] - expected[axis]).powi(2))
+                .sum::<f64>()
+                .sqrt();
+            assert!(
+                error < tolerance_au,
+                "{target} at unix day {unix_days}: {error} AU off Horizons"
+            );
+        }
+    }
 
     fn assert_close(actual: f64, expected: f64, epsilon: f64) {
         assert!(

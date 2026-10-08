@@ -16,6 +16,7 @@ use super::types::{
     AU_TO_SCENE_UNITS, AppPaths, RenderSettings, SECONDS_PER_DAY, SimulationState, WorldPosition,
 };
 use super::util::{eclipj2000_to_scene, random01};
+use crate::ephemeris::orbital_position_au;
 use bevy::asset::RenderAssetUsages;
 use bevy::math::DVec3;
 use bevy::mesh::{Indices, PrimitiveTopology};
@@ -281,45 +282,14 @@ pub(super) fn sync_asteroid_visibility(
 /// Heliocentric position in the ECLIPJ2000 frame (AU), from the orbital
 /// elements at simulation time `t` (seconds since epoch).
 fn kepler_position(orbit: &AsteroidOrbit, t_seconds: f64) -> DVec3 {
-    let mean_anomaly = orbit.mean_anomaly_at_epoch + orbit.mean_motion * t_seconds;
-    let eccentric_anomaly = solve_kepler(mean_anomaly, orbit.e);
-
-    let cos_e = eccentric_anomaly.cos();
-    let sin_e = eccentric_anomaly.sin();
-
-    // Position in the orbital plane (perifocal frame).
-    let x_perifocal = orbit.a * (cos_e - orbit.e);
-    let y_perifocal = orbit.a * (1.0 - orbit.e * orbit.e).sqrt() * sin_e;
-
-    // Rotate perifocal → ECLIPJ2000 via (ω, i, Ω) Euler angles.
-    let (sin_w, cos_w) = orbit.arg_peri.sin_cos();
-    let (sin_i, cos_i) = orbit.i.sin_cos();
-    let (sin_o, cos_o) = orbit.raan.sin_cos();
-
-    let x = (cos_o * cos_w - sin_o * sin_w * cos_i) * x_perifocal
-        + (-cos_o * sin_w - sin_o * cos_w * cos_i) * y_perifocal;
-    let y = (sin_o * cos_w + cos_o * sin_w * cos_i) * x_perifocal
-        + (-sin_o * sin_w + cos_o * cos_w * cos_i) * y_perifocal;
-    let z = (sin_w * sin_i) * x_perifocal + (cos_w * sin_i) * y_perifocal;
-
-    DVec3::new(x, y, z)
-}
-
-/// Newton's-method solve of Kepler's equation `M = E - e·sin(E)`.
-/// 5 iterations is more than enough for `e ≤ 0.2`.
-fn solve_kepler(mean_anomaly: f64, eccentricity: f64) -> f64 {
-    let m = mean_anomaly.rem_euclid(TAU);
-    let mut e_anom = if eccentricity < 0.8 {
-        m
-    } else {
-        std::f64::consts::PI
-    };
-    for _ in 0..5 {
-        let f = e_anom - eccentricity * e_anom.sin() - m;
-        let f_prime = 1.0 - eccentricity * e_anom.cos();
-        e_anom -= f / f_prime;
-    }
-    e_anom
+    DVec3::from_array(orbital_position_au(
+        orbit.a,
+        orbit.e,
+        orbit.i,
+        orbit.raan,
+        orbit.arg_peri,
+        orbit.mean_anomaly_at_epoch + orbit.mean_motion * t_seconds,
+    ))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -404,28 +374,6 @@ fn build_lumpy_asteroid_mesh(seed: u64) -> Mesh {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn kepler_solver_converges_for_circular_orbit() {
-        let e = solve_kepler(1.234, 0.0);
-        // For e = 0, E should equal M (mod TAU).
-        assert!((e - 1.234).abs() < 1e-9);
-    }
-
-    #[test]
-    fn kepler_solver_converges_for_moderate_eccentricity() {
-        for &e in &[0.05, 0.10, 0.20] {
-            for k in 0..16 {
-                let m = (k as f64) * (TAU / 16.0);
-                let solved = solve_kepler(m, e);
-                let residual = solved - e * solved.sin() - m.rem_euclid(TAU);
-                assert!(
-                    residual.abs() < 1e-8,
-                    "residual {residual} too high at e={e}, m={m}"
-                );
-            }
-        }
-    }
 
     #[test]
     fn kepler_position_stays_within_orbit_bounds() {
