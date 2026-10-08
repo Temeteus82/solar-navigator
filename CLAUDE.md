@@ -189,8 +189,8 @@ src/
 
 The `spice` Cargo feature (on by default) gates all CSPICE integration with `#[cfg(feature = "spice")]`. Both code paths must compile and be correct:
 
-- **SPICE mode**: loads NAIF kernels from `assets/spice/`, uses `rust-spice` for accurate ephemerides. Bodies not covered by the loaded kernels (Ceres, Vesta, Charon) silently fall back to analytic orbits.
-- **Fallback/portable mode**: analytic Keplerian ellipses defined in `ephemeris.rs:orbit_for_target`. No native library needed.
+- **SPICE mode**: loads NAIF kernels from `assets/spice/`, uses `rust-spice` for accurate ephemerides. Bodies not covered by the loaded kernels fall back: Ceres and Vesta to real Keplerian elements from the JPL Small-Body Database (`ephemeris.rs:CERES_ELEMENTS`/`VESTA_ELEMENTS`, propagated on absolute dates), Charon and the Galilean moons to reconstructed orbits around their primary.
+- **Fallback/portable mode**: planets ride circles in `ephemeris.rs:orbit_for_target` whose phase is fixed at app launch, not tied to a date — fine as a sketch, but positions are not real (no Horizons sync corrects them in this mode). Ceres, Vesta and Voyager 1 use their dated models here too. No native library needed.
 
 `SpiceEphemeris` is stored as `NonSend` (`EphemerisResource`) because the SPICE lock (`Mutex<SpiceLock>`) must not be sent across threads.
 
