@@ -2422,6 +2422,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "egui-phosphor"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f4299551488dddaa8f757727e1eb4ffdaf277ffe6e30b413403468f5ecf4634"
+dependencies = [
+ "egui",
+]
+
+[[package]]
 name = "either"
 version = "1.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5481,6 +5490,7 @@ dependencies = [
  "bevy",
  "bevy_egui",
  "chrono",
+ "egui-phosphor",
  "image",
  "reqwest 0.13.5",
  "rust-spice",

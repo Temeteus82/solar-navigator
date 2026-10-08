@@ -4,6 +4,7 @@ mod materials;
 mod render;
 mod setup;
 mod simulation;
+mod theme;
 mod types;
 mod ui;
 mod util;
@@ -43,6 +44,27 @@ pub(crate) fn run() {
             None
         }
     };
+
+    let default_plugins = DefaultPlugins.set(AssetPlugin {
+        file_path: asset_file_path,
+        ..default()
+    });
+    // Windows renders through DX12 only. wgpu otherwise picks Vulkan on AMD,
+    // and the app froze the whole system (hard hang, no driver recovery logged)
+    // while a browser was decoding video on the same GPU. `WGPU_BACKEND` still
+    // overrides this, e.g. to capture Vulkan in docs/gpu-profiling.md.
+    #[cfg(windows)]
+    let default_plugins = default_plugins.set(bevy::render::RenderPlugin {
+        render_creation: bevy::render::settings::WgpuSettings {
+            backends: Some(
+                bevy::render::settings::Backends::from_env()
+                    .unwrap_or(bevy::render::settings::Backends::DX12),
+            ),
+            ..default()
+        }
+        .into(),
+        ..default()
+    });
 
     let mut app = App::new();
     app.insert_resource(ClearColor(Color::srgba(0.003, 0.005, 0.02, 1.0)))
@@ -93,10 +115,7 @@ pub(crate) fn run() {
             auto_create_primary_context: false,
             ..default()
         })
-        .add_plugins(DefaultPlugins.set(AssetPlugin {
-            file_path: asset_file_path,
-            ..default()
-        }))
+        .add_plugins(default_plugins)
         .add_plugins(MaterialPlugin::<PlanetAtmosphereMaterial>::default())
         .add_plugins(MaterialPlugin::<PlanetRingMaterial>::default())
         .add_plugins(AutoExposurePlugin)
@@ -162,7 +181,11 @@ pub(crate) fn run() {
             PostUpdate,
             render::apply_render_origin.before(TransformSystems::Propagate),
         )
-        .add_systems(EguiPrimaryContextPass, ui::draw_side_panel);
+        .add_systems(
+            EguiPrimaryContextPass,
+            (theme::apply_theme, ui::draw_side_panel).chain(),
+        )
+        .add_systems(Last, render::cap_frame_rate);
 
     if let Some(client) = horizons_client {
         app.insert_resource(HorizonsHttpClient { client });
