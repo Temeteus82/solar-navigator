@@ -80,12 +80,162 @@ const VESTA_ELEMENTS: KeplerElements = KeplerElements {
     mean_motion_deg_per_day: 0.271_618_361_359_990_9,
 };
 
+// Pluto system barycentre (SBDB 134340), epoch JD 2457588.5 TDB (2016-07-31).
+// Pluto is absent from the planet tables below, and SPICE mode reads it from
+// de440s, so this only drives portable mode. Against Horizons: ~0.04 AU today,
+// but Neptune's perturbations grow it to ~1-1.6 AU (~2 deg) by 1600 and 2200.
+const PLUTO_ELEMENTS: KeplerElements = KeplerElements {
+    epoch_unix_days: 17_001.0,
+    semi_major_axis_au: 39.588_629_385_171_24,
+    eccentricity: 0.251_837_877_857_689_2,
+    inclination_deg: 17.147_711_409_991_14,
+    ascending_node_deg: 110.292_384_054_305_7,
+    arg_perihelion_deg: 113.709_001_515_856_5,
+    mean_anomaly_at_epoch_deg: 38.683_663_473_181_84,
+    mean_motion_deg_per_day: 0.003_956_838_955_553_025,
+};
+
 fn minor_body_elements(target: &str) -> Option<&'static KeplerElements> {
     match target {
         "CERES" => Some(&CERES_ELEMENTS),
         "VESTA" => Some(&VESTA_ELEMENTS),
+        "PLUTO" | "PLUTO BARYCENTER" => Some(&PLUTO_ELEMENTS),
         _ => None,
     }
+}
+
+/// Mean orbital elements as `[value at J2000, rate per Julian century]`, from
+/// JPL's "Approximate Positions of the Planets" (E. M. Standish), Table 2a:
+/// mean ecliptic and equinox of J2000, valid 3000 BC - 3000 AD.
+/// <https://ssd.jpl.nasa.gov/planets/approx_pos.html>
+struct PlanetMeanElements {
+    semi_major_axis_au: [f64; 2],
+    eccentricity: [f64; 2],
+    inclination_deg: [f64; 2],
+    mean_longitude_deg: [f64; 2],
+    long_perihelion_deg: [f64; 2],
+    ascending_node_deg: [f64; 2],
+    /// Table 2b's `[b, c, s, f]` mean-anomaly correction for the outer planets.
+    mean_anomaly_terms: Option<[f64; 4]>,
+}
+
+// Checked against Horizons over the app's 1600-2200 date range: Mercury, Venus
+// and the Earth-Moon barycentre within ~0.01 deg, Mars 0.03 deg, the giants 0.3 deg.
+const MERCURY_ELEMENTS: PlanetMeanElements = PlanetMeanElements {
+    semi_major_axis_au: [0.387_098_43, 0.0],
+    eccentricity: [0.205_636_61, 0.000_021_23],
+    inclination_deg: [7.005_594_32, -0.005_901_58],
+    mean_longitude_deg: [252.251_667_24, 149_472.674_866_23],
+    long_perihelion_deg: [77.457_718_95, 0.159_400_13],
+    ascending_node_deg: [48.339_618_19, -0.122_141_82],
+    mean_anomaly_terms: None,
+};
+const VENUS_ELEMENTS: PlanetMeanElements = PlanetMeanElements {
+    semi_major_axis_au: [0.723_321_02, -0.000_000_26],
+    eccentricity: [0.006_763_99, -0.000_051_07],
+    inclination_deg: [3.397_775_45, 0.000_434_94],
+    mean_longitude_deg: [181.979_708_50, 58_517.815_602_60],
+    long_perihelion_deg: [131.767_557_13, 0.056_796_48],
+    ascending_node_deg: [76.672_614_96, -0.272_741_74],
+    mean_anomaly_terms: None,
+};
+/// Earth-Moon barycentre: within ~4 700 km of Earth itself.
+const EARTH_MOON_BARYCENTER_ELEMENTS: PlanetMeanElements = PlanetMeanElements {
+    semi_major_axis_au: [1.000_000_18, -0.000_000_03],
+    eccentricity: [0.016_731_63, -0.000_036_61],
+    inclination_deg: [-0.000_543_46, -0.013_371_78],
+    mean_longitude_deg: [100.466_915_72, 35_999.373_063_29],
+    long_perihelion_deg: [102.930_058_85, 0.317_952_60],
+    ascending_node_deg: [-5.112_603_89, -0.241_238_56],
+    mean_anomaly_terms: None,
+};
+const MARS_ELEMENTS: PlanetMeanElements = PlanetMeanElements {
+    semi_major_axis_au: [1.523_712_43, 0.000_000_97],
+    eccentricity: [0.093_365_11, 0.000_091_49],
+    inclination_deg: [1.851_818_69, -0.007_247_57],
+    mean_longitude_deg: [-4.568_131_64, 19_140.299_342_43],
+    long_perihelion_deg: [-23.917_447_84, 0.452_236_25],
+    ascending_node_deg: [49.713_209_84, -0.268_524_31],
+    mean_anomaly_terms: None,
+};
+const JUPITER_ELEMENTS: PlanetMeanElements = PlanetMeanElements {
+    semi_major_axis_au: [5.202_480_19, -0.000_028_64],
+    eccentricity: [0.048_535_90, 0.000_180_26],
+    inclination_deg: [1.298_614_16, -0.003_226_99],
+    mean_longitude_deg: [34.334_791_52, 3_034.903_717_57],
+    long_perihelion_deg: [14.274_952_44, 0.181_991_96],
+    ascending_node_deg: [100.292_826_54, 0.130_246_19],
+    mean_anomaly_terms: Some([-0.000_124_52, 0.060_640_60, -0.356_354_38, 38.351_250_00]),
+};
+const SATURN_ELEMENTS: PlanetMeanElements = PlanetMeanElements {
+    semi_major_axis_au: [9.541_498_83, -0.000_030_65],
+    eccentricity: [0.055_508_25, -0.000_320_44],
+    inclination_deg: [2.494_241_02, 0.004_519_69],
+    mean_longitude_deg: [50.075_713_29, 1_222.114_947_24],
+    long_perihelion_deg: [92.861_360_63, 0.541_794_78],
+    ascending_node_deg: [113.639_987_02, -0.250_150_02],
+    mean_anomaly_terms: Some([0.000_258_99, -0.134_344_69, 0.873_201_47, 38.351_250_00]),
+};
+const URANUS_ELEMENTS: PlanetMeanElements = PlanetMeanElements {
+    semi_major_axis_au: [19.187_979_48, -0.000_204_55],
+    eccentricity: [0.046_857_40, -0.000_015_50],
+    inclination_deg: [0.772_981_27, -0.001_801_55],
+    mean_longitude_deg: [314.202_766_25, 428.495_125_95],
+    long_perihelion_deg: [172.434_044_41, 0.092_669_85],
+    ascending_node_deg: [73.962_502_15, 0.057_396_99],
+    mean_anomaly_terms: Some([0.000_583_31, -0.977_318_48, 0.176_892_45, 7.670_250_00]),
+};
+const NEPTUNE_ELEMENTS: PlanetMeanElements = PlanetMeanElements {
+    semi_major_axis_au: [30.069_527_52, 0.000_064_47],
+    eccentricity: [0.008_954_39, 0.000_008_18],
+    inclination_deg: [1.770_055_20, 0.000_224_00],
+    mean_longitude_deg: [304.222_892_87, 218.465_153_14],
+    long_perihelion_deg: [46.681_587_24, 0.010_099_38],
+    ascending_node_deg: [131.786_358_53, -0.006_063_02],
+    mean_anomaly_terms: Some([-0.000_413_48, 0.683_463_18, -0.101_625_47, 7.670_250_00]),
+};
+
+fn planet_mean_elements(target: &str) -> Option<&'static PlanetMeanElements> {
+    match target {
+        "MERCURY" | "MERCURY BARYCENTER" => Some(&MERCURY_ELEMENTS),
+        "VENUS" | "VENUS BARYCENTER" => Some(&VENUS_ELEMENTS),
+        "EARTH" | "EARTH BARYCENTER" => Some(&EARTH_MOON_BARYCENTER_ELEMENTS),
+        "MARS" | "MARS BARYCENTER" => Some(&MARS_ELEMENTS),
+        "JUPITER" | "JUPITER BARYCENTER" => Some(&JUPITER_ELEMENTS),
+        "SATURN" | "SATURN BARYCENTER" => Some(&SATURN_ELEMENTS),
+        "URANUS" | "URANUS BARYCENTER" => Some(&URANUS_ELEMENTS),
+        "NEPTUNE" | "NEPTUNE BARYCENTER" => Some(&NEPTUNE_ELEMENTS),
+        _ => None,
+    }
+}
+
+/// J2000.0 (JD 2451545.0), in days since the Unix epoch.
+const J2000_UNIX_DAYS: f64 = 10_957.5;
+const DAYS_PER_JULIAN_CENTURY: f64 = 36_525.0;
+
+/// The approximate-positions recipe: evaluate each element at `T` Julian
+/// centuries past J2000, then solve the ellipse. UTC stands in for TDB here;
+/// the ~70 s difference is far below the tables' own accuracy.
+fn planet_position_au(elements: &PlanetMeanElements, unix_days: f64) -> [f64; 3] {
+    let t = (unix_days - J2000_UNIX_DAYS) / DAYS_PER_JULIAN_CENTURY;
+    let at = |[value, rate]: [f64; 2]| value + rate * t;
+
+    let long_perihelion = at(elements.long_perihelion_deg);
+    let ascending_node = at(elements.ascending_node_deg);
+    let mut mean_anomaly = at(elements.mean_longitude_deg) - long_perihelion;
+    if let Some([b, c, s, f]) = elements.mean_anomaly_terms {
+        let (sin_ft, cos_ft) = (f * t).to_radians().sin_cos();
+        mean_anomaly += b * t * t + c * cos_ft + s * sin_ft;
+    }
+
+    orbital_position_au(
+        at(elements.semi_major_axis_au),
+        at(elements.eccentricity),
+        at(elements.inclination_deg).to_radians(),
+        ascending_node.to_radians(),
+        (long_perihelion - ascending_node).to_radians(),
+        mean_anomaly.to_radians(),
+    )
 }
 
 fn minor_body_position_au(elements: &KeplerElements, unix_days: f64) -> [f64; 3] {
@@ -152,14 +302,6 @@ fn solve_kepler(mean_anomaly: f64, eccentricity: f64) -> f64 {
     e_anom
 }
 
-#[derive(Clone, Copy)]
-struct FallbackOrbit {
-    semi_major_axis_au: f64,
-    period_days: f64,
-    phase_radians: f64,
-    inclination_radians: f64,
-}
-
 #[cfg(feature = "spice")]
 enum EphemerisState {
     #[cfg(feature = "spice")]
@@ -175,7 +317,7 @@ pub struct SpiceEphemeris {
     state: EphemerisState,
     status_line: String,
     // Wall-clock time at construction (simulation day 0), in days since the
-    // Unix epoch — anchors the dated Voyager trajectory and minor-body orbits.
+    // Unix epoch — anchors every analytic (non-SPICE) position to a real date.
     start_unix_days: f64,
 }
 
@@ -336,16 +478,14 @@ impl SpiceEphemeris {
         self.position_au(target, 0.0)
     }
 
-    /// Non-SPICE position: Voyager's and the minor bodies' dated orbits, else
-    /// the analytic planet circles.
+    /// Non-SPICE position, on absolute dates: Voyager's trajectory, else the
+    /// analytic orbits (`fallback_position_au`).
     fn analytic_position_au(&self, target: &str, elapsed_simulation_days: f64) -> [f64; 3] {
         let unix_days = self.start_unix_days + elapsed_simulation_days;
         if target == VOYAGER_1_TARGET {
             voyager_1_position_au(unix_days)
-        } else if let Some(elements) = minor_body_elements(target) {
-            minor_body_position_au(elements, unix_days)
         } else {
-            fallback_position_au(target, elapsed_simulation_days)
+            fallback_position_au(target, unix_days)
         }
     }
 }
@@ -590,10 +730,10 @@ pub const CALLISTO_ORBIT: SatelliteOrbit = SatelliteOrbit {
     z_wobble_frequency: 0.5,
 };
 
-fn fallback_satellite_position_au(orbit: &SatelliteOrbit, elapsed_days: f64) -> [f64; 3] {
-    let primary = fallback_planet_position_au(orbit.primary, elapsed_days);
+fn fallback_satellite_position_au(orbit: &SatelliteOrbit, unix_days: f64) -> [f64; 3] {
+    let primary = fallback_planet_position_au(orbit.primary, unix_days);
     let radius_au = orbit.semi_major_axis_km / KM_PER_AU;
-    let theta = std::f64::consts::TAU * elapsed_days / orbit.period_days + orbit.phase_radians;
+    let theta = std::f64::consts::TAU * unix_days / orbit.period_days + orbit.phase_radians;
 
     [
         primary[0] + radius_au * theta.cos(),
@@ -602,99 +742,39 @@ fn fallback_satellite_position_au(orbit: &SatelliteOrbit, elapsed_days: f64) -> 
     ]
 }
 
-fn fallback_position_au(target: &str, elapsed_days: f64) -> [f64; 3] {
+fn fallback_position_au(target: &str, unix_days: f64) -> [f64; 3] {
     if target.eq_ignore_ascii_case("MOON") {
-        return fallback_satellite_position_au(&MOON_ORBIT, elapsed_days);
+        return fallback_satellite_position_au(&MOON_ORBIT, unix_days);
     }
     if target.eq_ignore_ascii_case("CHARON") {
-        return fallback_satellite_position_au(&CHARON_ORBIT, elapsed_days);
+        return fallback_satellite_position_au(&CHARON_ORBIT, unix_days);
     }
     if target.eq_ignore_ascii_case("IO") {
-        return fallback_satellite_position_au(&IO_ORBIT, elapsed_days);
+        return fallback_satellite_position_au(&IO_ORBIT, unix_days);
     }
     if target.eq_ignore_ascii_case("EUROPA") {
-        return fallback_satellite_position_au(&EUROPA_ORBIT, elapsed_days);
+        return fallback_satellite_position_au(&EUROPA_ORBIT, unix_days);
     }
     if target.eq_ignore_ascii_case("GANYMEDE") {
-        return fallback_satellite_position_au(&GANYMEDE_ORBIT, elapsed_days);
+        return fallback_satellite_position_au(&GANYMEDE_ORBIT, unix_days);
     }
     if target.eq_ignore_ascii_case("CALLISTO") {
-        return fallback_satellite_position_au(&CALLISTO_ORBIT, elapsed_days);
+        return fallback_satellite_position_au(&CALLISTO_ORBIT, unix_days);
     }
 
-    fallback_planet_position_au(target, elapsed_days)
+    fallback_planet_position_au(target, unix_days)
 }
 
-fn fallback_planet_position_au(target: &str, elapsed_days: f64) -> [f64; 3] {
-    let Some(orbit) = orbit_for_target(target) else {
-        return [0.0, 0.0, 0.0];
-    };
-
-    let theta = orbit.phase_radians + std::f64::consts::TAU * elapsed_days / orbit.period_days;
-    let x = orbit.semi_major_axis_au * theta.cos();
-    let y = orbit.semi_major_axis_au * theta.sin();
-    let z = y * orbit.inclination_radians.sin();
-
-    [x, y, z]
-}
-
-fn orbit_for_target(target: &str) -> Option<FallbackOrbit> {
-    match target {
-        "MERCURY" | "MERCURY BARYCENTER" => Some(FallbackOrbit {
-            semi_major_axis_au: 0.387,
-            period_days: 87.969,
-            phase_radians: 1.0,
-            inclination_radians: 7.0_f64.to_radians(),
-        }),
-        "VENUS" | "VENUS BARYCENTER" => Some(FallbackOrbit {
-            semi_major_axis_au: 0.723,
-            period_days: 224.701,
-            phase_radians: 2.3,
-            inclination_radians: 3.4_f64.to_radians(),
-        }),
-        "EARTH" | "EARTH BARYCENTER" => Some(FallbackOrbit {
-            semi_major_axis_au: 1.0,
-            period_days: 365.256,
-            phase_radians: 0.0,
-            inclination_radians: 0.0,
-        }),
-        "MARS" | "MARS BARYCENTER" => Some(FallbackOrbit {
-            semi_major_axis_au: 1.524,
-            period_days: 686.98,
-            phase_radians: 1.9,
-            inclination_radians: 1.85_f64.to_radians(),
-        }),
-        "JUPITER" | "JUPITER BARYCENTER" => Some(FallbackOrbit {
-            semi_major_axis_au: 5.204,
-            period_days: 4332.589,
-            phase_radians: 0.7,
-            inclination_radians: 1.3_f64.to_radians(),
-        }),
-        "SATURN" | "SATURN BARYCENTER" => Some(FallbackOrbit {
-            semi_major_axis_au: 9.582,
-            period_days: 10_759.22,
-            phase_radians: 2.8,
-            inclination_radians: 2.5_f64.to_radians(),
-        }),
-        "URANUS" | "URANUS BARYCENTER" => Some(FallbackOrbit {
-            semi_major_axis_au: 19.201,
-            period_days: 30_688.5,
-            phase_radians: 4.1,
-            inclination_radians: 0.77_f64.to_radians(),
-        }),
-        "NEPTUNE" | "NEPTUNE BARYCENTER" => Some(FallbackOrbit {
-            semi_major_axis_au: 30.047,
-            period_days: 60_182.0,
-            phase_radians: 5.4,
-            inclination_radians: 1.77_f64.to_radians(),
-        }),
-        "PLUTO" | "PLUTO BARYCENTER" => Some(FallbackOrbit {
-            semi_major_axis_au: 39.482,
-            period_days: 90_560.0,
-            phase_radians: 3.74,
-            inclination_radians: 17.16_f64.to_radians(),
-        }),
-        _ => None,
+/// Heliocentric position of a planet or minor body on a real date: JPL mean
+/// elements for the planets, osculating elements for Ceres, Vesta and Pluto.
+/// Unknown targets sit at the origin.
+fn fallback_planet_position_au(target: &str, unix_days: f64) -> [f64; 3] {
+    if let Some(elements) = minor_body_elements(target) {
+        minor_body_position_au(elements, unix_days)
+    } else if let Some(elements) = planet_mean_elements(target) {
+        planet_position_au(elements, unix_days)
+    } else {
+        [0.0, 0.0, 0.0]
     }
 }
 
@@ -825,28 +905,119 @@ $$EOE
     }
 
     #[test]
-    fn fallback_planet_position_au_earth_is_periodic() {
-        let start = fallback_planet_position_au("EARTH", 0.0);
-        let one_orbit = fallback_planet_position_au("EARTH", 365.256);
-
-        assert_close(start[0], one_orbit[0], 1e-9);
-        assert_close(start[1], one_orbit[1], 1e-9);
-        assert_close(start[2], one_orbit[2], 1e-9);
+    fn planet_orbits_match_horizons_reference_states() {
+        // JPL Horizons heliocentric ECLIPJ2000 barycentre positions (AU), 00:00 UT,
+        // at 2026-10-08 plus the date picker's far ends. The tolerance is an
+        // angle along the orbit: the launch-anchored circles these replaced were
+        // off by up to 180 deg.
+        let cases = [
+            (
+                "MERCURY BARYCENTER",
+                20_734.0,
+                [0.133_242, -0.428_363, -0.047_228],
+                0.05,
+            ),
+            (
+                "VENUS BARYCENTER",
+                20_734.0,
+                [0.722_752, 0.058_380, -0.040_899],
+                0.05,
+            ),
+            (
+                "EARTH BARYCENTER",
+                20_734.0,
+                [0.968_102, 0.247_909, -0.000_021],
+                0.05,
+            ),
+            (
+                "MARS BARYCENTER",
+                20_734.0,
+                [0.033_150, 1.566_135, 0.032_008],
+                0.1,
+            ),
+            (
+                "JUPITER BARYCENTER",
+                20_734.0,
+                [-3.530_716, 3.964_587, 0.062_526],
+                0.5,
+            ),
+            (
+                "SATURN BARYCENTER",
+                20_734.0,
+                [9.249_589, 1.804_953, -0.399_624],
+                0.5,
+            ),
+            (
+                "URANUS BARYCENTER",
+                20_734.0,
+                [8.906_029, 17.279_873, -0.051_301],
+                0.5,
+            ),
+            (
+                "NEPTUNE BARYCENTER",
+                20_734.0,
+                [29.836_361, 1.402_219, -0.716_446],
+                0.5,
+            ),
+            (
+                "PLUTO BARYCENTER",
+                20_734.0,
+                [19.982_985, -29.362_562, -2.637_492],
+                0.5,
+            ),
+            (
+                "JUPITER BARYCENTER",
+                -135_140.0,
+                [-4.067_272, 3.466_508, 0.078_330],
+                0.5,
+            ), // 1600
+            (
+                "URANUS BARYCENTER",
+                -62_091.0,
+                [-18.271_165, 0.981_666, 0.242_013],
+                0.5,
+            ), // 1800
+            (
+                "SATURN BARYCENTER",
+                84_006.0,
+                [8.460_607, -4.981_661, -0.253_689],
+                0.5,
+            ), // 2200
+            // Two-body Pluto drifts under Neptune's pull: ~1.9 deg by 1600.
+            (
+                "PLUTO BARYCENTER",
+                -135_140.0,
+                [41.029_440, 21.874_063, -14.211_786],
+                3.0,
+            ),
+        ];
+        for (target, unix_days, expected, tolerance_deg) in cases {
+            let actual = fallback_planet_position_au(target, unix_days);
+            let error_au = (0..3)
+                .map(|axis| (actual[axis] - expected[axis]).powi(2))
+                .sum::<f64>()
+                .sqrt();
+            let radius_au = expected.iter().map(|c| c * c).sum::<f64>().sqrt();
+            let error_deg = (error_au / radius_au).to_degrees();
+            assert!(
+                error_deg < tolerance_deg,
+                "{target} at unix day {unix_days}: {error_deg:.3} deg ({error_au:.4} AU) off Horizons"
+            );
+        }
     }
 
     #[test]
-    fn fallback_planet_position_au_matches_earth_reference_at_day_zero() {
-        let earth = fallback_planet_position_au("EARTH", 0.0);
-        assert_close(earth[0], 1.0, EPS);
-        assert_close(earth[1], 0.0, EPS);
-        assert_close(earth[2], 0.0, EPS);
+    fn j2000_unix_days_is_2000_new_year_noon() {
+        let j2000 = chrono::DateTime::from_timestamp((J2000_UNIX_DAYS * 86_400.0) as i64, 0)
+            .expect("valid timestamp");
+        assert_eq!(j2000.to_rfc3339(), "2000-01-01T12:00:00+00:00");
     }
 
     #[test]
     fn fallback_position_au_moon_xy_radius_matches_semi_major_axis() {
-        let elapsed_days = 42.0;
-        let moon = fallback_position_au("MOON", elapsed_days);
-        let earth = fallback_planet_position_au("EARTH", elapsed_days);
+        let unix_days = 42.0;
+        let moon = fallback_position_au("MOON", unix_days);
+        let earth = fallback_planet_position_au("EARTH", unix_days);
 
         let dx = moon[0] - earth[0];
         let dy = moon[1] - earth[1];
@@ -858,9 +1029,9 @@ $$EOE
 
     #[test]
     fn fallback_position_au_charon_xy_radius_matches_semi_major_axis() {
-        let elapsed_days = 133.7;
-        let charon = fallback_position_au("CHARON", elapsed_days);
-        let pluto = fallback_planet_position_au("PLUTO", elapsed_days);
+        let unix_days = 133.7;
+        let charon = fallback_position_au("CHARON", unix_days);
+        let pluto = fallback_planet_position_au("PLUTO", unix_days);
 
         let dx = charon[0] - pluto[0];
         let dy = charon[1] - pluto[1];
@@ -870,9 +1041,9 @@ $$EOE
         assert_close(xy_radius, expected, 1e-12);
     }
 
-    fn galilean_moon_xy_radius(moon: &str, elapsed_days: f64) -> f64 {
-        let moon_pos = fallback_position_au(moon, elapsed_days);
-        let jupiter = fallback_planet_position_au("JUPITER BARYCENTER", elapsed_days);
+    fn galilean_moon_xy_radius(moon: &str, unix_days: f64) -> f64 {
+        let moon_pos = fallback_position_au(moon, unix_days);
+        let jupiter = fallback_planet_position_au("JUPITER BARYCENTER", unix_days);
         let dx = moon_pos[0] - jupiter[0];
         let dy = moon_pos[1] - jupiter[1];
         (dx * dx + dy * dy).sqrt()
