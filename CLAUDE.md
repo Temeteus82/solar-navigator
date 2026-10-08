@@ -35,6 +35,17 @@ the whole system while a browser was decoding video on the same GPU. Every
 platform is also capped at `types.rs:MAX_FRAME_RATE` (60 fps) by
 `render.rs:cap_frame_rate`; vsync alone let a 240 Hz display drive 240 fps.
 
+DX12 shaders are compiled by a **statically linked DXC** (Bevy's
+`statically-linked-dxc` feature) rather than Windows' legacy FXC
+(`d3dcompiler_47.dll`, Shader Model 5.1 max). Its build script downloads a
+prebuilt, SHA-256-pinned library from GitHub, and that library links against
+**ATL** — so both build variants on Windows need the
+`Microsoft.VisualStudio.Component.VC.ATL` component, or they fail with
+`LNK1104: cannot open file 'atls.lib'`. Install it into the Build Tools instance
+rustc actually links with (it picks one itself when no developer prompt is
+active; check with `cargo rustc --release --bin solar-navigator -- --print link-args`
+and look for `link.exe`).
+
 ### Quality checks (run both feature flag variants before committing)
 
 ```bash
@@ -128,10 +139,10 @@ to the built-in `sips`. All three download scripts skip files that already exist
 
 ```powershell
 # Windows (x86_64) — native PowerShell, no bash required. Install the MSVC
-# linker and libclang first (both one-time, and both needed by the SPICE
-# build):
+# linker with ATL (both build variants: static DXC needs atls.lib) and libclang
+# (SPICE build) first, both one-time:
 #   winget install Microsoft.VisualStudio.2022.BuildTools --override `
-#     "--wait --quiet --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+#     "--wait --quiet --add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.VC.ATL --includeRecommended"
 #   winget install LLVM.LLVM
 ./scripts/setup_cspice_windows_x86_64.ps1
 ./scripts/download_spice_kernels.ps1
@@ -158,7 +169,8 @@ still can't find it, point it there explicitly — `LIBCLANG_PATH=C:\Program Fil
 on Windows, or the equivalent directory holding `libclang.so`/`libclang.dylib`.
 
 The portable build (`--no-default-features`) needs none of this: it has no
-`cspice-sys` dependency, so it builds with only a Rust toolchain and a linker.
+`cspice-sys` dependency, so it builds with only a Rust toolchain and a linker
+(on Windows, the MSVC linker with ATL — see the DX12 note above).
 
 ## Architecture
 
