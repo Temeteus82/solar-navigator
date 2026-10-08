@@ -43,11 +43,6 @@ bevy = { version = "0.19.1", default-features = false, features = [
     "dds",
     "multi_threaded",
     "png",
-    # Compile shaders for the DX12 backend (pinned on Windows) with a
-    # statically linked DXC instead of the legacy, unmaintained FXC
-    # (d3dcompiler_47.dll, Shader Model 5.1 max). Only pulls in its
-    # dependency on Windows x86_64 MSVC; a no-op elsewhere.
-    "statically-linked-dxc",
     # Populates the reflection type registry, which spawning a glTF scene
     # (the Voyager model) needs: the scene spawner clones its components
     # through reflection and panics on any type left unregistered.

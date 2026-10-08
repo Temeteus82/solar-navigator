@@ -10,11 +10,10 @@ cost of the post-processing stack and the asteroid swarm.
 
 ## Pick a capturable backend
 
-Solar Navigator renders through [wgpu](https://wgpu.rs/) (via Bevy): **D3D12**
-on Windows (pinned in `src/app/mod.rs` — wgpu's own pick there is Vulkan on
-AMD), **Vulkan** on Linux, **Metal** on macOS. `WGPU_BACKEND` overrides the
-Windows pin. The desktop capture tools below all support **Vulkan**, so forcing
-Vulkan is the common denominator on Windows/Linux:
+Solar Navigator renders through [wgpu](https://wgpu.rs/) (via Bevy), which
+selects a backend per platform: **Vulkan** on Windows (when the driver offers it,
+as AMD's does) and Linux, **Metal** on macOS. The desktop capture tools below all
+support **Vulkan**, so forcing Vulkan is the common denominator on Windows/Linux:
 
 ```bash
 # macOS / Linux

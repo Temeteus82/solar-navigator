@@ -3698,12 +3698,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "830d08ce1d1d941e6b30645f1a0eb5643013d835ce3779a5fc208261dbe10f55"
 
 [[package]]
-name = "lhash"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "744a4c881f502e98c2241d2e5f50040ac73b30194d64452bb6260393b53f0dc9"
-
-[[package]]
 name = "libc"
 version = "0.2.189"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3787,15 +3781,6 @@ name = "lru-slab"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
-
-[[package]]
-name = "mach-dxcompiler-rs"
-version = "0.1.6+2026.09.16-48d5a66.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "699d5b85d279d172f6ea742c6c47342fdd7c388872cea2e137e2c6721ef2e6d6"
-dependencies = [
- "lhash",
-]
 
 [[package]]
 name = "matchers"
@@ -6541,7 +6526,6 @@ dependencies = [
  "libc",
  "libloading",
  "log",
- "mach-dxcompiler-rs",
  "naga",
  "objc2 0.6.4",
  "objc2-core-foundation",
