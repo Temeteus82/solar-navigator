@@ -29,6 +29,16 @@ Intel/x86_64 macOS is intentionally unsupported — `src/main.rs` has a
 ships Intel Macs, CSPICE is vendored for arm64, and the GPU texture path assumes
 Apple Silicon's Metal feature set).
 
+Every platform is capped at `types.rs:MAX_FRAME_RATE` (60 fps) by
+`render.rs:cap_frame_rate`; vsync alone let a 240 Hz display drive 240 fps. Under
+that uncapped load the app once hard-froze a Windows/AMD system (Vulkan) while a
+browser was decoding video on the same GPU.
+
+Do not pin Windows to **DX12**: on the AMD dev machine (RX 6900 XT, driver
+26.8.1) the DX12 device is removed (`0x887A0005`) within seconds of startup,
+with either the FXC or a statically linked DXC shader compiler (tested
+2026-10-08). wgpu's default pick there is Vulkan.
+
 ### Quality checks (run both feature flag variants before committing)
 
 ```bash

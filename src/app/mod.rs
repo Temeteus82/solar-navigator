@@ -4,6 +4,7 @@ mod materials;
 mod render;
 mod setup;
 mod simulation;
+mod theme;
 mod types;
 mod ui;
 mod util;
@@ -162,7 +163,11 @@ pub(crate) fn run() {
             PostUpdate,
             render::apply_render_origin.before(TransformSystems::Propagate),
         )
-        .add_systems(EguiPrimaryContextPass, ui::draw_side_panel);
+        .add_systems(
+            EguiPrimaryContextPass,
+            (theme::apply_theme, ui::draw_side_panel).chain(),
+        )
+        .add_systems(Last, render::cap_frame_rate);
 
     if let Some(client) = horizons_client {
         app.insert_resource(HorizonsHttpClient { client });

@@ -1,14 +1,15 @@
 use super::camera::toggle_camera_mode_impl;
 use super::types::{
-    AU_TO_SCENE_UNITS, AppStatus, BODIES, BodyRuntime, BodyTrails, CameraMode, HorizonsSyncState,
-    KM_PER_AU, MAX_SIMULATION_RATE_MULTIPLIER, MIN_SIMULATION_RATE_MULTIPLIER, OrbitCameraState,
-    RenderSettings, SECONDS_PER_DAY, SIDE_PANEL_WIDTH_PX, SimulationEpoch, SimulationState,
-    TextureStatus,
+    AU_TO_SCENE_UNITS, AppStatus, BODIES, BodyKind, BodyRuntime, BodyTrails, CameraMode,
+    HorizonsSyncState, KM_PER_AU, MAX_SIMULATION_RATE_MULTIPLIER, MIN_SIMULATION_RATE_MULTIPLIER,
+    OrbitCameraState, RenderSettings, SECONDS_PER_DAY, SIDE_PANEL_WIDTH_PX, SimulationEpoch,
+    SimulationState, TextureStatus,
 };
 use super::util::format_simulation_speed;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use chrono::{Datelike, Duration as ChronoDuration, NaiveDate};
+use egui_phosphor::fill as icon;
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn draw_side_panel(
@@ -31,29 +32,9 @@ pub(super) fn draw_side_panel(
         "Fallback"
     };
 
+    // Fonts, colours and spacing are set once by `theme::apply_theme`.
     let ctx = contexts.ctx_mut()?;
     let theme = ctx.theme();
-    ctx.style_mut_of(theme, |style| {
-        // Bump every text style up by 1pt from egui defaults.
-        for (style_key, font_id) in style.text_styles.iter_mut() {
-            font_id.size = match style_key {
-                egui::TextStyle::Small => 11.0,
-                egui::TextStyle::Body => 15.0,
-                egui::TextStyle::Monospace => 15.0,
-                egui::TextStyle::Button => 15.0,
-                egui::TextStyle::Heading => 21.0,
-                _ => font_id.size,
-            };
-        }
-
-        // Accessibility (WCAG 1.4.3): egui's dark default body text (~gray 140,
-        // ~5:1 on the panel background) leaves no headroom for a *passing*
-        // weaker hint/secondary colour. Lift primary text to ~gray 205 (~10:1)
-        // and raise the weak-text alpha so hint and secondary text still clear
-        // the 4.5:1 minimum (~4.8:1) while staying visibly subordinate.
-        style.visuals.widgets.noninteractive.fg_stroke.color = egui::Color32::from_gray(205);
-        style.visuals.weak_text_alpha = 0.66;
-    });
     // Keep a small right inner_margin for readability but not so wide that
     // the blank gutter makes the separator visible. The separator line itself
     // is suppressed via show_separator_line(false) below.
@@ -88,142 +69,125 @@ pub(super) fn draw_side_panel(
             ui.small(format!("Mode: {mode_text}"));
             ui.add_space(4.0);
 
-            // Primary navigation: the search field stays pinned above the body
-            // list it filters so query and results share one eye-span.
-            let search_label = ui.label("Search target:");
-            // Right-to-left so the expanding text field is added last: in a
-            // left-to-right row a `desired_width(INFINITY)` field consumes the
-            // whole width and pushes the "Clear" button off the fixed-width
-            // panel's right edge, where it is clipped and unclickable.
-            //
-            // Allocate an explicit one-row height. `with_layout` would hand the
-            // inner layout the panel's full remaining height, and a right-to-left
-            // row aligned `Center` then expands to fill it — vertically centring
-            // the field and starving the body list / scroll area below it. Sizing
-            // the region to `interact_size.y` (as `ui.horizontal` does internally)
-            // keeps it a single row.
-            let row_size = egui::vec2(ui.available_width(), ui.spacing().interact_size.y);
-            ui.allocate_ui_with_layout(
-                row_size,
-                egui::Layout::right_to_left(egui::Align::Center),
-                |ui| {
-                    if ui.button("Clear").clicked() {
-                        simulation_state.target_filter.clear();
-                    }
-                    // Associate the visible label with the field so a screen
-                    // reader announces it as a named control (WCAG 3.3.2 / 4.1.2).
-                    ui.add(
-                        egui::TextEdit::singleline(&mut simulation_state.target_filter)
-                            .hint_text("Filter bodies…")
-                            .desired_width(f32::INFINITY),
-                    )
-                    .labelled_by(search_label.id);
-                },
-            );
-            ui.add_space(2.0);
-
-            let filter_lc = simulation_state.target_filter.trim().to_ascii_lowercase();
-
-            // Everything below scrolls together so no section is ever clipped on
-            // a short window, and the body list leads — it's the headline action.
-            egui::ScrollArea::vertical()
-                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
-                .show(ui, |ui| {
-                    // top_down_justified stretches each item to the full panel
-                    // width and keeps text left-aligned.
-                    ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
+            // Primary navigation: a dropdown of every body, pinned above the
+            // scrolling sections so it is always one click away.
+            let target_label = ui.label(format!("{} Target", icon::CROSSHAIR));
+            let selected_name = simulation_state
+                .selected_body_index
+                .and_then(|index| BODIES.get(index))
+                .map_or("Select a body…", |body| body.display_name);
+            egui::ComboBox::from_id_salt("target_body")
+                .selected_text(selected_name)
+                .width(ui.available_width())
+                // Let the list use the window's height so every group shows
+                // without scrolling; egui clamps the popup to the screen. (An
+                // infinite height is not honoured — it falls back to ~400 px.)
+                .height(ctx.viewport_rect().height())
+                .show_ui(ui, |ui| {
+                    for (group, kind) in BodyKind::ALL.into_iter().enumerate() {
+                        if group > 0 {
+                            ui.separator();
+                        }
+                        ui.label(egui::RichText::new(kind.group_label()).small().strong());
                         for (index, body) in BODIES.iter().enumerate() {
-                            let label = body.display_name;
-                            if !filter_lc.is_empty()
-                                && !label.to_ascii_lowercase().contains(&filter_lc)
-                            {
+                            if body.kind != kind {
                                 continue;
                             }
                             let selected = simulation_state.selected_body_index == Some(index);
-                            if ui.selectable_label(selected, label).clicked() {
+                            if ui.selectable_label(selected, body.display_name).clicked() {
                                 simulation_state.jump_request = Some(index);
                             }
                         }
-                    });
+                    }
+                })
+                .response
+                // Name the dropdown for screen readers (WCAG 3.3.2 / 4.1.2).
+                .labelled_by(target_label.id);
+            ui.add_space(6.0);
 
-                    ui.add_space(6.0);
+            // Everything below scrolls together so no section is ever clipped on
+            // a short window.
+            egui::ScrollArea::vertical()
+                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
+                .show(ui, |ui| {
+                    egui::CollapsingHeader::new(format!(
+                        "{} Time & simulation",
+                        icon::CLOCK_COUNTDOWN
+                    ))
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        let paused_text = if simulation_state.paused {
+                            format!("{} paused", icon::PAUSE)
+                        } else {
+                            format!("{} running", icon::PLAY)
+                        };
+                        let elapsed_days = simulation_state.elapsed_simulation_days;
+                        let current_utc = simulation_epoch.start_utc
+                            + ChronoDuration::milliseconds((elapsed_days * 86_400_000.0) as i64);
+                        ui.label(format!(
+                            "Date: {}",
+                            current_utc.format("%Y-%m-%d %H:%M:%S UTC")
+                        ));
+                        ui.small(format!("Elapsed: {elapsed_days:+.3} days from launch"));
+                        ui.label(format!(
+                            "Sim: {paused_text} | Speed: {}",
+                            format_simulation_speed(simulation_state.simulation_rate)
+                        ));
+                        ui.small(format!(
+                            "Days/s equivalent: {:.7}",
+                            simulation_state.simulation_rate / SECONDS_PER_DAY
+                        ));
+                        ui.add(
+                            egui::Slider::new(
+                                &mut simulation_state.simulation_rate,
+                                MIN_SIMULATION_RATE_MULTIPLIER..=MAX_SIMULATION_RATE_MULTIPLIER,
+                            )
+                            .logarithmic(true)
+                            .text("x realtime"),
+                        );
 
-                    egui::CollapsingHeader::new("Time & simulation")
-                        .default_open(true)
-                        .show(ui, |ui| {
-                            let paused_text = if simulation_state.paused {
-                                "paused"
-                            } else {
-                                "running"
-                            };
-                            let elapsed_days = simulation_state.elapsed_simulation_days;
-                            let current_utc = simulation_epoch.start_utc
-                                + ChronoDuration::milliseconds(
-                                    (elapsed_days * 86_400_000.0) as i64,
-                                );
-                            ui.label(format!(
-                                "Date: {}",
-                                current_utc.format("%Y-%m-%d %H:%M:%S UTC")
-                            ));
-                            ui.small(format!("Elapsed: {elapsed_days:+.3} days from launch"));
-                            ui.label(format!(
-                                "Sim: {paused_text} | Speed: {}",
-                                format_simulation_speed(simulation_state.simulation_rate)
-                            ));
-                            ui.small(format!(
-                                "Days/s equivalent: {:.7}",
-                                simulation_state.simulation_rate / SECONDS_PER_DAY
-                            ));
+                        ui.add_space(4.0);
+                        ui.label("Jump to date:");
+                        let max_day = days_in_month(
+                            simulation_state.picker_year,
+                            simulation_state.picker_month,
+                        );
+                        simulation_state.picker_day = simulation_state.picker_day.clamp(1, max_day);
+                        ui.horizontal(|ui| {
                             ui.add(
-                                egui::Slider::new(
-                                    &mut simulation_state.simulation_rate,
-                                    MIN_SIMULATION_RATE_MULTIPLIER..=MAX_SIMULATION_RATE_MULTIPLIER,
-                                )
-                                .logarithmic(true)
-                                .text("x realtime"),
+                                egui::DragValue::new(&mut simulation_state.picker_year)
+                                    .range(1600..=2200)
+                                    .prefix("Y "),
                             );
-
-                            ui.add_space(4.0);
-                            ui.label("Jump to date:");
-                            let max_day = days_in_month(
+                            ui.add(
+                                egui::DragValue::new(&mut simulation_state.picker_month)
+                                    .range(1..=12)
+                                    .prefix("M "),
+                            );
+                            ui.add(
+                                egui::DragValue::new(&mut simulation_state.picker_day)
+                                    .range(1..=max_day)
+                                    .prefix("D "),
+                            );
+                        });
+                        if ui
+                            .button(format!("{} Go to Date", icon::CALENDAR_CHECK))
+                            .clicked()
+                            && let Some(date) = NaiveDate::from_ymd_opt(
                                 simulation_state.picker_year,
                                 simulation_state.picker_month,
-                            );
-                            simulation_state.picker_day =
-                                simulation_state.picker_day.clamp(1, max_day);
-                            ui.horizontal(|ui| {
-                                ui.add(
-                                    egui::DragValue::new(&mut simulation_state.picker_year)
-                                        .range(1600..=2200)
-                                        .prefix("Y "),
-                                );
-                                ui.add(
-                                    egui::DragValue::new(&mut simulation_state.picker_month)
-                                        .range(1..=12)
-                                        .prefix("M "),
-                                );
-                                ui.add(
-                                    egui::DragValue::new(&mut simulation_state.picker_day)
-                                        .range(1..=max_day)
-                                        .prefix("D "),
-                                );
-                            });
-                            if ui.button("Go to Date").clicked()
-                                && let Some(date) = NaiveDate::from_ymd_opt(
-                                    simulation_state.picker_year,
-                                    simulation_state.picker_month,
-                                    simulation_state.picker_day,
-                                )
-                            {
-                                let target = date.and_hms_opt(0, 0, 0).unwrap().and_utc();
-                                let diff = target.signed_duration_since(simulation_epoch.start_utc);
-                                simulation_state.elapsed_simulation_days =
-                                    diff.num_seconds() as f64 / 86_400.0;
-                                trails.clear();
-                            }
-                        });
+                                simulation_state.picker_day,
+                            )
+                        {
+                            let target = date.and_hms_opt(0, 0, 0).unwrap().and_utc();
+                            let diff = target.signed_duration_since(simulation_epoch.start_utc);
+                            simulation_state.elapsed_simulation_days =
+                                diff.num_seconds() as f64 / 86_400.0;
+                            trails.clear();
+                        }
+                    });
 
-                    egui::CollapsingHeader::new("Display")
+                    egui::CollapsingHeader::new(format!("{} Display", icon::EYE))
                         .default_open(true)
                         .show(ui, |ui| {
                             ui.small(format!(
@@ -242,7 +206,7 @@ pub(super) fn draw_side_panel(
 
                     // Always render this header so selecting/deselecting a body
                     // swaps its contents in place instead of shifting the layout.
-                    egui::CollapsingHeader::new("Selected body")
+                    egui::CollapsingHeader::new(format!("{} Selected body", icon::PLANET))
                         .default_open(true)
                         .show(ui, |ui| {
                             if let Some(selected_index) = simulation_state.selected_body_index
@@ -282,44 +246,50 @@ pub(super) fn draw_side_panel(
                                     ui.label(format!("Light from Sun: {light_minutes:.2} min"));
                                 }
                             } else {
-                                ui.small("Click a body above to inspect it.");
+                                ui.small("Pick a target above to inspect it.");
                             }
                         });
 
-                    egui::CollapsingHeader::new("Camera & controls")
-                        .default_open(false)
-                        .show(ui, |ui| {
-                            let camera_mode_label = match orbit_camera.mode {
-                                CameraMode::Orbit => "Orbit",
-                                CameraMode::Free => "Free fly",
-                            };
-                            ui.label(format!("Camera: {camera_mode_label}"));
-                            ui.small(format!("Distance: {:.2}", orbit_camera.distance));
-                            if ui.button("Toggle free camera (F)").clicked() {
-                                toggle_camera_mode_impl(
-                                    &mut orbit_camera,
-                                    &mut simulation_state,
-                                    &body_runtime,
-                                );
-                            }
+                    egui::CollapsingHeader::new(format!(
+                        "{} Camera & controls",
+                        icon::VIDEO_CAMERA
+                    ))
+                    .default_open(false)
+                    .show(ui, |ui| {
+                        let camera_mode_label = match orbit_camera.mode {
+                            CameraMode::Orbit => "Orbit",
+                            CameraMode::Free => "Free fly",
+                        };
+                        ui.label(format!("Camera: {camera_mode_label}"));
+                        ui.small(format!("Distance: {:.2}", orbit_camera.distance));
+                        if ui
+                            .button(format!("{} Toggle free camera (F)", icon::NAVIGATION_ARROW))
+                            .clicked()
+                        {
+                            toggle_camera_mode_impl(
+                                &mut orbit_camera,
+                                &mut simulation_state,
+                                &body_runtime,
+                            );
+                        }
 
-                            ui.add_space(4.0);
-                            if orbit_camera.mode == CameraMode::Free {
-                                ui.label("- WASD: move, Q/E: down/up");
-                                ui.label("- Drag: look around");
-                                ui.label("- Shift: boost speed");
-                                ui.label("- F: back to orbit camera");
-                            } else {
-                                ui.label("- Left or right drag: orbit");
-                                ui.label("- Shift + left drag: pan");
-                                ui.label("- Mouse wheel / trackpad scroll: zoom");
-                                ui.label("- WASD: orbit, Q/E: zoom (keyboard)");
-                                ui.label("- F: free camera");
-                            }
-                            ui.label("- Space: pause/unpause");
-                            ui.label("- Up/Down: simulation speed");
-                            ui.label("- Backspace: reset time/view");
-                        });
+                        ui.add_space(4.0);
+                        if orbit_camera.mode == CameraMode::Free {
+                            ui.label("- WASD: move, Q/E: down/up");
+                            ui.label("- Drag: look around");
+                            ui.label("- Shift: boost speed");
+                            ui.label("- F: back to orbit camera");
+                        } else {
+                            ui.label("- Left or right drag: orbit");
+                            ui.label("- Shift + left drag: pan");
+                            ui.label("- Mouse wheel / trackpad scroll: zoom");
+                            ui.label("- WASD: orbit, Q/E: zoom (keyboard)");
+                            ui.label("- F: free camera");
+                        }
+                        ui.label("- Space: pause/unpause");
+                        ui.label("- Up/Down: simulation speed");
+                        ui.label("- Backspace: reset time/view");
+                    });
 
                     // Diagnostics are demoted out of prime real estate, but the
                     // section auto-expands when there's something wrong to see.
@@ -332,7 +302,16 @@ pub(super) fn draw_side_panel(
                         !horizons_sync.failures.is_empty() || !texture_status.failed.is_empty();
                     let issues_just_appeared = has_issues && !*diagnostics_were_flagged;
                     *diagnostics_were_flagged = has_issues;
-                    egui::CollapsingHeader::new("Status & diagnostics")
+                    let diagnostics_icon = if has_issues {
+                        icon::WARNING
+                    } else {
+                        icon::INFO
+                    };
+                    // The icon flips with `has_issues`, so pin the id: egui
+                    // otherwise derives it from the title text and would forget
+                    // the open/closed state whenever the icon changes.
+                    egui::CollapsingHeader::new(format!("{diagnostics_icon} Status & diagnostics"))
+                        .id_salt("status_and_diagnostics")
                         .default_open(has_issues)
                         .open(issues_just_appeared.then_some(true))
                         .show(ui, |ui| {
@@ -342,7 +321,10 @@ pub(super) fn draw_side_panel(
                             if ui
                                 .add_enabled(
                                     !retry_in_progress,
-                                    egui::Button::new("Retry Horizons Sync"),
+                                    egui::Button::new(format!(
+                                        "{} Retry Horizons Sync",
+                                        icon::ARROW_CLOCKWISE
+                                    )),
                                 )
                                 .clicked()
                             {

@@ -8,6 +8,10 @@ use std::collections::VecDeque;
 use std::path::PathBuf;
 
 pub(super) const TRAIL_MAX_POINTS: usize = 512;
+// Upper bound on rendered frames per second. Vsync alone would let a 240 Hz
+// display drive the GPU at 240 fps; 60 divides the common 120/144/240 Hz rates
+// evenly enough to avoid visible judder against vsync.
+pub(super) const MAX_FRAME_RATE: f64 = 60.0;
 
 pub(super) const AU_TO_SCENE_UNITS: f64 = 250.0;
 pub(super) const KM_PER_AU: f64 = 149_597_870.7;
@@ -41,9 +45,42 @@ pub(super) struct RingSpec {
     pub(super) axial_tilt_degrees: f32,
 }
 
+/// What sort of body a `BodySpec` is; groups the target dropdown. Variant
+/// order is the order the groups are listed in.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum BodyKind {
+    Star,
+    Planet,
+    Moon,
+    /// Dwarf planets and large asteroids (Ceres, Pluto, Vesta).
+    MinorBody,
+    Spacecraft,
+}
+
+impl BodyKind {
+    pub(super) const ALL: [BodyKind; 5] = [
+        BodyKind::Star,
+        BodyKind::Planet,
+        BodyKind::Moon,
+        BodyKind::MinorBody,
+        BodyKind::Spacecraft,
+    ];
+
+    pub(super) fn group_label(self) -> &'static str {
+        match self {
+            BodyKind::Star => "Star",
+            BodyKind::Planet => "Planets",
+            BodyKind::Moon => "Moons",
+            BodyKind::MinorBody => "Dwarf planets & asteroids",
+            BodyKind::Spacecraft => "Spacecraft",
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(super) struct BodySpec {
     pub(super) display_name: &'static str,
+    pub(super) kind: BodyKind,
     pub(super) spice_target: &'static str,
     pub(super) visual_radius: f32,
     pub(super) color: [f32; 4],
@@ -196,7 +233,6 @@ pub(super) struct SimulationState {
     pub(super) paused: bool,
     pub(super) selected_body_index: Option<usize>,
     pub(super) jump_request: Option<usize>,
-    pub(super) target_filter: String,
     pub(super) picker_year: i32,
     pub(super) picker_month: u32,
     pub(super) picker_day: u32,
@@ -210,7 +246,6 @@ impl Default for SimulationState {
             paused: true,
             selected_body_index: None,
             jump_request: None,
-            target_filter: String::new(),
             picker_year: 2025,
             picker_month: 1,
             picker_day: 1,
@@ -376,6 +411,7 @@ pub(super) struct StarPoint {
 pub(super) const BODIES: [BodySpec; 19] = [
     BodySpec {
         display_name: "Sun",
+        kind: BodyKind::Star,
         spice_target: "SUN",
         visual_radius: 3.8,
         color: [1.0, 0.9, 0.55, 1.0],
@@ -398,6 +434,7 @@ pub(super) const BODIES: [BodySpec; 19] = [
     },
     BodySpec {
         display_name: "Mercury",
+        kind: BodyKind::Planet,
         spice_target: "MERCURY BARYCENTER",
         visual_radius: 0.06,
         color: [0.65, 0.62, 0.59, 1.0],
@@ -420,6 +457,7 @@ pub(super) const BODIES: [BodySpec; 19] = [
     },
     BodySpec {
         display_name: "Venus",
+        kind: BodyKind::Planet,
         spice_target: "VENUS BARYCENTER",
         visual_radius: 0.15,
         color: [0.92, 0.76, 0.4, 1.0],
@@ -442,6 +480,7 @@ pub(super) const BODIES: [BodySpec; 19] = [
     },
     BodySpec {
         display_name: "Earth",
+        kind: BodyKind::Planet,
         spice_target: "EARTH",
         // 15× physical size at 250 AU/unit; Moon orbit (0.642 scene units) leaves
         // a clear 0.44-unit gap between Earth and Moon surfaces.
@@ -466,6 +505,7 @@ pub(super) const BODIES: [BodySpec; 19] = [
     },
     BodySpec {
         display_name: "Moon",
+        kind: BodyKind::Moon,
         spice_target: "MOON",
         // 15× physical size at 250 AU/unit; proportional to Earth (Earth/Moon ≈ 3.67).
         visual_radius: 0.044,
@@ -489,6 +529,7 @@ pub(super) const BODIES: [BodySpec; 19] = [
     },
     BodySpec {
         display_name: "Mars",
+        kind: BodyKind::Planet,
         spice_target: "MARS BARYCENTER",
         visual_radius: 0.085,
         color: [0.8, 0.35, 0.2, 1.0],
@@ -511,6 +552,7 @@ pub(super) const BODIES: [BodySpec; 19] = [
     },
     BodySpec {
         display_name: "Ceres",
+        kind: BodyKind::MinorBody,
         spice_target: "CERES",
         visual_radius: 0.04,
         color: [0.74, 0.74, 0.72, 1.0],
@@ -533,6 +575,7 @@ pub(super) const BODIES: [BodySpec; 19] = [
     },
     BodySpec {
         display_name: "Vesta",
+        kind: BodyKind::MinorBody,
         spice_target: "VESTA",
         visual_radius: 0.03,
         color: [0.7, 0.66, 0.62, 1.0],
@@ -555,6 +598,7 @@ pub(super) const BODIES: [BodySpec; 19] = [
     },
     BodySpec {
         display_name: "Jupiter",
+        kind: BodyKind::Planet,
         spice_target: "JUPITER BARYCENTER",
         // Reduced from the default 15× to 4.6× so Galilean moons (innermost Io at
         // 0.704 scene units) orbit visibly outside the sphere.
@@ -579,6 +623,7 @@ pub(super) const BODIES: [BodySpec; 19] = [
     },
     BodySpec {
         display_name: "Io",
+        kind: BodyKind::Moon,
         spice_target: "IO",
         // 15× physical radius at 250 AU/unit; orbits Jupiter at 0.704 scene units.
         visual_radius: 0.046,
@@ -602,6 +647,7 @@ pub(super) const BODIES: [BodySpec; 19] = [
     },
     BodySpec {
         display_name: "Europa",
+        kind: BodyKind::Moon,
         spice_target: "EUROPA",
         // 15× physical radius at 250 AU/unit; orbits Jupiter at 1.12 scene units.
         visual_radius: 0.039,
@@ -625,6 +671,7 @@ pub(super) const BODIES: [BodySpec; 19] = [
     },
     BodySpec {
         display_name: "Ganymede",
+        kind: BodyKind::Moon,
         spice_target: "GANYMEDE",
         // 15× physical radius at 250 AU/unit; orbits Jupiter at 1.79 scene units.
         visual_radius: 0.066,
@@ -648,6 +695,7 @@ pub(super) const BODIES: [BodySpec; 19] = [
     },
     BodySpec {
         display_name: "Callisto",
+        kind: BodyKind::Moon,
         spice_target: "CALLISTO",
         // 15× physical radius at 250 AU/unit; orbits Jupiter at 3.15 scene units.
         visual_radius: 0.060,
@@ -671,6 +719,7 @@ pub(super) const BODIES: [BodySpec; 19] = [
     },
     BodySpec {
         display_name: "Saturn",
+        kind: BodyKind::Planet,
         spice_target: "SATURN BARYCENTER",
         visual_radius: 1.5,
         color: [0.83, 0.77, 0.56, 1.0],
@@ -697,6 +746,7 @@ pub(super) const BODIES: [BodySpec; 19] = [
     },
     BodySpec {
         display_name: "Uranus",
+        kind: BodyKind::Planet,
         spice_target: "URANUS BARYCENTER",
         visual_radius: 0.64,
         color: [0.57, 0.82, 0.92, 1.0],
@@ -719,6 +769,7 @@ pub(super) const BODIES: [BodySpec; 19] = [
     },
     BodySpec {
         display_name: "Neptune",
+        kind: BodyKind::Planet,
         spice_target: "NEPTUNE BARYCENTER",
         visual_radius: 0.62,
         color: [0.35, 0.45, 0.95, 1.0],
@@ -741,6 +792,7 @@ pub(super) const BODIES: [BodySpec; 19] = [
     },
     BodySpec {
         display_name: "Pluto",
+        kind: BodyKind::MinorBody,
         spice_target: "PLUTO BARYCENTER",
         // Capped below 15× physical to keep Charon visibly separate
         // (Pluto–Charon orbit is only 0.033 scene units at 250 AU/unit).
@@ -765,6 +817,7 @@ pub(super) const BODIES: [BodySpec; 19] = [
     },
     BodySpec {
         display_name: "Charon",
+        kind: BodyKind::Moon,
         spice_target: "CHARON",
         // Capped below 15× physical to keep separation from Pluto.
         visual_radius: 0.009,
@@ -788,6 +841,7 @@ pub(super) const BODIES: [BodySpec; 19] = [
     },
     BodySpec {
         display_name: "Voyager 1",
+        kind: BodyKind::Spacecraft,
         spice_target: "VOYAGER 1",
         // Bounding radius in scene units — ~10⁷× real size so the probe is
         // findable at all. Rendering precision this far out comes from the

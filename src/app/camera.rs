@@ -691,6 +691,21 @@ mod tests {
     }
 
     #[test]
+    fn body_kind_moon_matches_parent_body_index() {
+        use crate::app::types::BodyKind;
+        // The dropdown groups by `BodySpec::kind`; the camera frames moons via
+        // `parent_body_index`. A body added to one but not the other drifts.
+        for (index, body) in BODIES.iter().enumerate() {
+            assert_eq!(
+                body.kind == BodyKind::Moon,
+                parent_body_index(index).is_some(),
+                "{} kind disagrees with parent_body_index",
+                body.display_name
+            );
+        }
+    }
+
+    #[test]
     fn orient_camera_away_from_parent_keeps_the_planet_in_view() {
         let moon_position = Vec3::new(100.0, 0.0, 0.0);
         let planet_position = Vec3::new(99.5, 0.0, 0.0);

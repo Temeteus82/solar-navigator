@@ -2,8 +2,8 @@ use super::camera::view_focus_distance;
 use super::materials::{PlanetAtmosphereMaterial, PlanetRingMaterial};
 use super::types::{
     AU_TO_SCENE_UNITS, AppStatus, AtmosphereLayer, BODIES, BodyRuntime, BodyTrails, CameraMode,
-    LightingRig, MainCamera, OrbitCameraState, PlanetRing, RenderOrigin, RenderSettings,
-    SimulationState, StarsBackdrop, TRAIL_MAX_POINTS, WorldPosition,
+    LightingRig, MAX_FRAME_RATE, MainCamera, OrbitCameraState, PlanetRing, RenderOrigin,
+    RenderSettings, SimulationState, StarsBackdrop, TRAIL_MAX_POINTS, WorldPosition,
 };
 use super::util::format_simulation_speed;
 use bevy::light::{CascadeShadowConfig, CascadeShadowConfigBuilder};
@@ -12,6 +12,7 @@ use bevy::pbr::{ContactShadows, ScreenSpaceAmbientOcclusion};
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use std::f64::consts::TAU;
+use std::time::{Duration, Instant};
 
 pub(super) fn apply_lighting_preset(
     lighting_rig: Res<LightingRig>,
@@ -368,9 +369,60 @@ pub(super) fn update_window_title(
     );
 }
 
+/// Sleeps out the rest of the frame so the app never renders faster than
+/// `MAX_FRAME_RATE`. Runs last in the main schedule; with pipelined rendering
+/// the render world can't get ahead of the main world, so this paces the GPU too.
+pub(super) fn cap_frame_rate(mut next_frame: Local<Option<Instant>>) {
+    let now = Instant::now();
+    let (sleep, next) = frame_pacing(
+        now,
+        *next_frame,
+        Duration::from_secs_f64(1.0 / MAX_FRAME_RATE),
+    );
+    if let Some(sleep) = sleep {
+        std::thread::sleep(sleep);
+    }
+    *next_frame = Some(next);
+}
+
+/// How long to sleep now, and when the following frame is due. Deadlines
+/// advance by whole frame periods so pacing doesn't drift; a frame that
+/// overran its deadline resets the schedule instead of trying to catch up.
+fn frame_pacing(
+    now: Instant,
+    deadline: Option<Instant>,
+    period: Duration,
+) -> (Option<Duration>, Instant) {
+    match deadline {
+        Some(deadline) if deadline > now => (Some(deadline - now), deadline + period),
+        _ => (None, now + period),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn frame_pacing_sleeps_until_deadline_and_advances_by_one_period() {
+        let now = Instant::now();
+        let period = Duration::from_millis(16);
+        let deadline = now + Duration::from_millis(5);
+        let (sleep, next) = frame_pacing(now, Some(deadline), period);
+        assert_eq!(sleep, Some(Duration::from_millis(5)));
+        assert_eq!(next, deadline + period);
+    }
+
+    #[test]
+    fn frame_pacing_resets_after_an_overrun_or_on_the_first_frame() {
+        let now = Instant::now();
+        let period = Duration::from_millis(16);
+        for deadline in [None, Some(now), Some(now - Duration::from_millis(40))] {
+            let (sleep, next) = frame_pacing(now, deadline, period);
+            assert_eq!(sleep, None);
+            assert_eq!(next, now + period);
+        }
+    }
 
     #[test]
     fn render_space_keeps_precision_far_from_the_sun() {
