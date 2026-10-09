@@ -22,9 +22,9 @@ use materials::{PlanetAtmosphereMaterial, PlanetRingMaterial};
 use std::f32::consts::PI;
 use std::time::Duration;
 use types::{
-    AppPaths, AppStatus, BODIES, BodyRuntime, BodyTrails, EphemerisResource, HorizonsHttpClient,
-    HorizonsSyncState, OrbitCameraState, RenderOrigin, RenderSettings, SimulationEpoch,
-    SimulationState, TextureStatus,
+    AppPaths, AppStatus, BODIES, BodyRuntime, BodyTrails, DatePickerRange, EphemerisResource,
+    HorizonsHttpClient, HorizonsSyncState, OrbitCameraState, RenderOrigin, RenderSettings,
+    SimulationEpoch, SimulationState, TextureStatus,
 };
 
 pub(crate) fn run() {
@@ -35,6 +35,7 @@ pub(crate) fn run() {
     let ephemeris = SpiceEphemeris::new(&spice_dir);
     let status_line = ephemeris.status_line().to_string();
     let spice_enabled = ephemeris.is_spice_enabled();
+    let date_picker_range = DatePickerRange::from_coverage(ephemeris.spice_coverage_unix_days());
     eprintln!("{status_line}");
 
     let horizons_client = match build_horizons_client(Duration::from_secs(2)) {
@@ -73,6 +74,7 @@ pub(crate) fn run() {
         .insert_resource(SimulationEpoch {
             start_utc: Utc::now(),
         })
+        .insert_resource(date_picker_range)
         .insert_resource(OrbitCameraState {
             mode: types::CameraMode::default(),
             yaw: PI,
