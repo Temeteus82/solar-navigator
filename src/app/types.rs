@@ -2,7 +2,7 @@ use crate::ephemeris::SpiceEphemeris;
 use bevy::math::DVec3;
 use bevy::prelude::*;
 use bevy::tasks::Task;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use reqwest::blocking::Client;
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -279,6 +279,58 @@ impl Default for RenderSettings {
 #[derive(Resource)]
 pub(super) struct SimulationEpoch {
     pub(super) start_utc: DateTime<Utc>,
+}
+
+/// Widest span the date picker offers; the analytic orbits are checked
+/// against Horizons over it (`ephemeris.rs`).
+pub(super) const DATE_PICKER_MIN: NaiveDate = NaiveDate::from_ymd_opt(1600, 1, 1).unwrap();
+pub(super) const DATE_PICKER_MAX: NaiveDate = NaiveDate::from_ymd_opt(2200, 12, 31).unwrap();
+
+/// Dates the "Jump to date" picker accepts. In SPICE mode it is narrowed to
+/// the loaded kernel's coverage, so a jump never lands where CSPICE has no
+/// data; the ephemeris still falls back to analytic orbits if the running
+/// simulation drifts past the edge.
+#[derive(Resource, Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) struct DatePickerRange {
+    pub(super) min: NaiveDate,
+    pub(super) max: NaiveDate,
+    /// The kernel's own span (whole UTC days safely inside it) when SPICE is
+    /// active, for the panel to explain the narrower range.
+    pub(super) kernel_coverage: Option<(NaiveDate, NaiveDate)>,
+}
+
+impl DatePickerRange {
+    /// `coverage_unix_days` is the kernel's `[first, last]` span in days since
+    /// the Unix epoch (`SpiceEphemeris::spice_coverage_unix_days`), or `None`
+    /// without SPICE.
+    pub(super) fn from_coverage(coverage_unix_days: Option<(f64, f64)>) -> Self {
+        let full = Self {
+            min: DATE_PICKER_MIN,
+            max: DATE_PICKER_MAX,
+            kernel_coverage: None,
+        };
+        let Some((first, last)) = coverage_unix_days else {
+            return full;
+        };
+        // Keep a whole day clear of both edges: the kernel bounds are in TDB
+        // and the picker lands on 00:00 UTC, about a minute apart.
+        let date_at = |unix_days: f64| {
+            DateTime::<Utc>::from_timestamp(unix_days as i64 * SECONDS_PER_DAY as i64, 0)
+                .map(|date| date.date_naive())
+        };
+        let (Some(first), Some(last)) = (date_at(first.floor() + 1.0), date_at(last.ceil() - 1.0))
+        else {
+            return full;
+        };
+        if first > last {
+            return full;
+        }
+        Self {
+            min: first.max(DATE_PICKER_MIN),
+            max: last.min(DATE_PICKER_MAX),
+            kernel_coverage: Some((first, last)),
+        }
+    }
 }
 
 #[derive(Resource)]
@@ -892,5 +944,49 @@ mod tests {
     fn sidereal_spin_radians_per_second_preserves_retrograde_sign() {
         assert!(sidereal_spin_radians_per_second(1.0) > 0.0);
         assert!(sidereal_spin_radians_per_second(-1.0) < 0.0);
+    }
+
+    fn unix_days(year: i32, month: u32, day: u32) -> f64 {
+        let date = NaiveDate::from_ymd_opt(year, month, day).unwrap();
+        date.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp() as f64 / SECONDS_PER_DAY
+    }
+
+    #[test]
+    fn date_picker_range_without_spice_spans_the_full_picker() {
+        let range = DatePickerRange::from_coverage(None);
+        assert_eq!(range.min, DATE_PICKER_MIN);
+        assert_eq!(range.max, DATE_PICKER_MAX);
+        assert_eq!(range.kernel_coverage, None);
+    }
+
+    #[test]
+    fn date_picker_range_keeps_a_day_inside_the_kernel_coverage() {
+        // de440s: 1849-12-26 to 2150-01-22. Jumping to the first or last day
+        // itself would land ~1 minute outside (TDB vs UTC), so both ends
+        // move one whole day inward.
+        let range =
+            DatePickerRange::from_coverage(Some((unix_days(1849, 12, 26), unix_days(2150, 1, 22))));
+        let first = NaiveDate::from_ymd_opt(1849, 12, 27).unwrap();
+        let last = NaiveDate::from_ymd_opt(2150, 1, 21).unwrap();
+        assert_eq!(range.min, first);
+        assert_eq!(range.max, last);
+        assert_eq!(range.kernel_coverage, Some((first, last)));
+    }
+
+    #[test]
+    fn date_picker_range_never_exceeds_the_full_picker() {
+        // A long-span kernel (de441 reaches 13200 BC to 17191 AD) must not
+        // widen the picker past the analytic orbits' validated range.
+        let range =
+            DatePickerRange::from_coverage(Some((unix_days(1000, 1, 1), unix_days(3000, 1, 1))));
+        assert_eq!(range.min, DATE_PICKER_MIN);
+        assert_eq!(range.max, DATE_PICKER_MAX);
+    }
+
+    #[test]
+    fn date_picker_range_rejects_an_inverted_coverage() {
+        let range =
+            DatePickerRange::from_coverage(Some((unix_days(2150, 1, 22), unix_days(1849, 12, 26))));
+        assert_eq!(range, DatePickerRange::from_coverage(None));
     }
 }

@@ -308,8 +308,20 @@ enum EphemerisState {
     Spice {
         lock: Mutex<SpiceLock>,
         base_et: f64,
+        /// `[first, last]` ephemeris time the planetary kernel covers, from
+        /// `spkcov`. Queries outside it use the analytic orbits instead of
+        /// asking CSPICE, which would only signal `SPICE(SPKINSUFFDATA)`.
+        coverage_et: Option<(f64, f64)>,
     },
     Fallback,
+}
+
+/// Whether `et` lies inside the kernel's coverage window. `None` means the
+/// window could not be read, in which case every query is attempted and the
+/// error check after it decides.
+#[cfg(feature = "spice")]
+fn et_within_coverage(coverage_et: Option<(f64, f64)>, et: f64) -> bool {
+    coverage_et.is_none_or(|(first, last)| (first..=last).contains(&et))
 }
 
 pub struct SpiceEphemeris {
@@ -370,39 +382,102 @@ impl SpiceEphemeris {
             }
         };
 
-        lock.furnsh(&leap_seconds.to_string_lossy());
-        lock.furnsh(&planetary_ephemeris.to_string_lossy());
+        // CSPICE's default error action is ABORT: the first failed call (an
+        // unreadable kernel, a date outside `de440s`'s 1849-2150 coverage)
+        // prints a traceback and exits the process. RETURN instead, and
+        // `check()` after every call so a failure falls back to the analytic
+        // orbits.
+        lock.quiet();
 
-        if optional_text_pck.is_file() {
-            lock.furnsh(&optional_text_pck.to_string_lossy());
+        let fallback = |reason: String| Self {
+            state: EphemerisState::Fallback,
+            status_line: format!("Fallback orbit mode active: {reason}"),
+            start_unix_days: unix_days_now(),
+        };
+
+        let mut loaded_kernels = Vec::new();
+        for kernel in [&leap_seconds, &planetary_ephemeris] {
+            lock.furnsh(&kernel.to_string_lossy());
+            if let Err(err) = lock.check() {
+                lock.kclear();
+                return fallback(format!("could not load {} ({err})", kernel.display()));
+            }
+            loaded_kernels.push(kernel.display().to_string());
         }
 
-        if optional_gravity.is_file() {
-            lock.furnsh(&optional_gravity.to_string_lossy());
+        for kernel in [&optional_text_pck, &optional_gravity] {
+            if !kernel.is_file() {
+                continue;
+            }
+            lock.furnsh(&kernel.to_string_lossy());
+            match lock.check() {
+                Ok(()) => loaded_kernels.push(kernel.display().to_string()),
+                Err(err) => eprintln!("Skipping optional kernel {} ({err})", kernel.display()),
+            }
         }
 
         let utc_now = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let base_et = lock.str2et(&spice_utc_timestamp_input(&utc_now));
+        if let Err(err) = lock.check() {
+            lock.kclear();
+            return fallback(format!("could not convert the current time ({err})"));
+        }
 
-        let mut loaded_kernels = vec![
-            leap_seconds.display().to_string(),
-            planetary_ephemeris.display().to_string(),
-        ];
-        if optional_text_pck.is_file() {
-            loaded_kernels.push(optional_text_pck.display().to_string());
-        }
-        if optional_gravity.is_file() {
-            loaded_kernels.push(optional_gravity.display().to_string());
-        }
-        let status_line = format!("SPICE mode active: loaded {}", loaded_kernels.join(", "));
+        let start_unix_days = unix_days_now();
+        let coverage_et = spk_coverage_et(&lock, &planetary_ephemeris.to_string_lossy());
+        let coverage_note = match coverage_et {
+            Some((first, last)) => {
+                let to_date = |et: f64| {
+                    let unix_days = start_unix_days + (et - base_et) / SECONDS_PER_DAY;
+                    chrono::DateTime::from_timestamp((unix_days * SECONDS_PER_DAY) as i64, 0)
+                        .map(|date| date.format("%Y-%m-%d").to_string())
+                        .unwrap_or_else(|| format!("ET {et:.0}"))
+                };
+                format!(
+                    " | kernel coverage {} to {}, analytic orbits outside it",
+                    to_date(first),
+                    to_date(last)
+                )
+            }
+            None => " | kernel coverage unknown".to_string(),
+        };
+        let status_line = format!(
+            "SPICE mode active: loaded {}{coverage_note}",
+            loaded_kernels.join(", ")
+        );
 
         Self {
             state: EphemerisState::Spice {
                 lock: Mutex::new(lock),
                 base_et,
+                coverage_et,
             },
             status_line,
-            start_unix_days: unix_days_now(),
+            start_unix_days,
+        }
+    }
+
+    /// The span of dates the loaded planetary kernel covers, in days since
+    /// the Unix epoch. `None` in portable mode, in fallback mode, or when the
+    /// coverage could not be read.
+    pub fn spice_coverage_unix_days(&self) -> Option<(f64, f64)> {
+        #[cfg(feature = "spice")]
+        {
+            let EphemerisState::Spice {
+                base_et,
+                coverage_et,
+                ..
+            } = &self.state
+            else {
+                return None;
+            };
+            let to_unix_days = |et: f64| self.start_unix_days + (et - base_et) / SECONDS_PER_DAY;
+            coverage_et.map(|(first, last)| (to_unix_days(first), to_unix_days(last)))
+        }
+
+        #[cfg(not(feature = "spice"))]
+        {
+            None
         }
     }
 
@@ -432,10 +507,15 @@ impl SpiceEphemeris {
         }
 
         match &self.state {
-            EphemerisState::Spice { lock, base_et } => {
+            EphemerisState::Spice {
+                lock,
+                base_et,
+                coverage_et,
+            } => {
                 let et = *base_et + elapsed_simulation_days * SECONDS_PER_DAY;
                 let sl = lock.lock().expect("SPICE lock poisoned");
-                spice_position_au_at_et(&sl, target, et)
+                spice_position_au_at_et(&sl, target, et, *coverage_et)
+                    .unwrap_or_else(|| self.analytic_position_au(target, elapsed_simulation_days))
             }
             EphemerisState::Fallback => self.analytic_position_au(target, elapsed_simulation_days),
         }
@@ -457,14 +537,24 @@ impl SpiceEphemeris {
         }
 
         match &self.state {
-            EphemerisState::Spice { lock, base_et } => {
+            EphemerisState::Spice {
+                lock,
+                base_et,
+                coverage_et,
+            } => {
                 let sl = lock.lock().expect("SPICE lock poisoned");
                 let et = sl.str2et(&spice_utc_timestamp_input(utc_timestamp));
+                if let Err(err) = sl.check() {
+                    eprintln!("SPICE could not parse `{utc_timestamp}` ({err}); using day zero");
+                    return self.analytic_position_au(target, 0.0);
+                }
+                let elapsed_simulation_days = (et - *base_et) / SECONDS_PER_DAY;
 
                 if spice_supports_target(target) {
-                    spice_position_au_at_et(&sl, target, et)
+                    spice_position_au_at_et(&sl, target, et, *coverage_et).unwrap_or_else(|| {
+                        self.analytic_position_au(target, elapsed_simulation_days)
+                    })
                 } else {
-                    let elapsed_simulation_days = (et - *base_et) / SECONDS_PER_DAY;
                     self.analytic_position_au(target, elapsed_simulation_days)
                 }
             }
@@ -501,15 +591,61 @@ fn voyager_1_position_au(unix_days: f64) -> [f64; 3] {
     })
 }
 
+/// Heliocentric position from the loaded kernels, or `None` when `et` is
+/// outside their coverage or CSPICE signals an error — the caller then falls
+/// back to the analytic orbit. Errors are logged once, not once per frame.
 #[cfg(feature = "spice")]
-fn spice_position_au_at_et(lock: &SpiceLock, target: &str, et: f64) -> [f64; 3] {
-    let (position_km, _light_time) = lock.spkpos(target, et, SPICE_REFERENCE_FRAME, "NONE", "SUN");
+fn spice_position_au_at_et(
+    lock: &SpiceLock,
+    target: &str,
+    et: f64,
+    coverage_et: Option<(f64, f64)>,
+) -> Option<[f64; 3]> {
+    if !et_within_coverage(coverage_et, et) {
+        return None;
+    }
 
-    [
+    let (position_km, _light_time) = lock.spkpos(target, et, SPICE_REFERENCE_FRAME, "NONE", "SUN");
+    if let Err(err) = lock.check() {
+        static LOGGED: std::sync::Once = std::sync::Once::new();
+        LOGGED.call_once(|| {
+            eprintln!("SPICE query failed for {target} ({err}); using analytic orbits");
+        });
+        return None;
+    }
+
+    Some([
         position_km[0] / KM_PER_AU,
         position_km[1] / KM_PER_AU,
         position_km[2] / KM_PER_AU,
-    ]
+    ])
+}
+
+/// `[first, last]` ephemeris time over which every object in `spk` has
+/// data: the intersection of the per-object `spkcov` windows (gaps inside a
+/// window are ignored; the error check after each query still catches them).
+#[cfg(feature = "spice")]
+fn spk_coverage_et(lock: &SpiceLock, spk: &str) -> Option<(f64, f64)> {
+    let ids = lock.spkobj(spk);
+    if lock.check().is_err() || ids.is_empty() {
+        return None;
+    }
+
+    let mut first = f64::NEG_INFINITY;
+    let mut last = f64::INFINITY;
+    for id in ids.iter() {
+        let window = lock.spkcov(spk, id);
+        if lock.check().is_err() {
+            return None;
+        }
+        // A window is a flat list of interval endpoints: [start, end, ...].
+        let start = window.get(0)?;
+        let end = window.get(window.len().checked_sub(1)?)?;
+        first = first.max(start);
+        last = last.min(end);
+    }
+
+    (first < last).then_some((first, last))
 }
 
 #[cfg(feature = "spice")]
@@ -1103,6 +1239,16 @@ $$EOE
             fallback_position_au("NOT_A_REAL_TARGET", 12.34),
             [0.0, 0.0, 0.0]
         );
+    }
+
+    #[cfg(feature = "spice")]
+    #[test]
+    fn et_within_coverage_is_inclusive_and_open_without_a_window() {
+        assert!(et_within_coverage(None, 1e12));
+        assert!(et_within_coverage(Some((-10.0, 10.0)), -10.0));
+        assert!(et_within_coverage(Some((-10.0, 10.0)), 10.0));
+        assert!(!et_within_coverage(Some((-10.0, 10.0)), 10.5));
+        assert!(!et_within_coverage(Some((-10.0, 10.0)), -1e9));
     }
 
     #[cfg(not(feature = "spice"))]

@@ -1,9 +1,9 @@
 use super::camera::toggle_camera_mode_impl;
 use super::types::{
     AU_TO_SCENE_UNITS, AppStatus, BODIES, BodyKind, BodyRuntime, BodyTrails, CameraMode,
-    HorizonsSyncState, KM_PER_AU, MAX_SIMULATION_RATE_MULTIPLIER, MIN_SIMULATION_RATE_MULTIPLIER,
-    OrbitCameraState, RenderSettings, SECONDS_PER_DAY, SIDE_PANEL_WIDTH_PX, SimulationEpoch,
-    SimulationState, TextureStatus,
+    DatePickerRange, HorizonsSyncState, KM_PER_AU, MAX_SIMULATION_RATE_MULTIPLIER,
+    MIN_SIMULATION_RATE_MULTIPLIER, OrbitCameraState, RenderSettings, SECONDS_PER_DAY,
+    SIDE_PANEL_WIDTH_PX, SimulationEpoch, SimulationState, TextureStatus,
 };
 use super::util::format_simulation_speed;
 use bevy::prelude::*;
@@ -22,6 +22,7 @@ pub(super) fn draw_side_panel(
     mut orbit_camera: ResMut<OrbitCameraState>,
     texture_status: Res<TextureStatus>,
     simulation_epoch: Res<SimulationEpoch>,
+    date_picker_range: Res<DatePickerRange>,
     body_runtime: Res<BodyRuntime>,
     mut trails: ResMut<BodyTrails>,
     mut diagnostics_were_flagged: Local<bool>,
@@ -129,6 +130,15 @@ pub(super) fn draw_side_panel(
                             current_utc.format("%Y-%m-%d %H:%M:%S UTC")
                         ));
                         ui.small(format!("Elapsed: {elapsed_days:+.3} days from launch"));
+                        if let Some((first, last)) = date_picker_range.kernel_coverage
+                            && !(first..=last).contains(&current_utc.date_naive())
+                        {
+                            ui.small(format!(
+                                "{} Outside the SPICE kernel's {first} to {last} coverage: \
+                                 analytic orbits in use",
+                                icon::WARNING
+                            ));
+                        }
                         ui.label(format!(
                             "Sim: {paused_text} | Speed: {}",
                             format_simulation_speed(simulation_state.simulation_rate)
@@ -156,7 +166,9 @@ pub(super) fn draw_side_panel(
                         ui.horizontal(|ui| {
                             ui.add(
                                 egui::DragValue::new(&mut simulation_state.picker_year)
-                                    .range(1600..=2200)
+                                    .range(
+                                        date_picker_range.min.year()..=date_picker_range.max.year(),
+                                    )
                                     .prefix("Y "),
                             );
                             ui.add(
@@ -179,11 +191,21 @@ pub(super) fn draw_side_panel(
                                 simulation_state.picker_day,
                             )
                         {
+                            // The year range above leaves the first and last
+                            // year partially outside the kernel's coverage;
+                            // clamp the whole date and show where it landed.
+                            let date = date.clamp(date_picker_range.min, date_picker_range.max);
+                            simulation_state.picker_year = date.year();
+                            simulation_state.picker_month = date.month();
+                            simulation_state.picker_day = date.day();
                             let target = date.and_hms_opt(0, 0, 0).unwrap().and_utc();
                             let diff = target.signed_duration_since(simulation_epoch.start_utc);
                             simulation_state.elapsed_simulation_days =
                                 diff.num_seconds() as f64 / 86_400.0;
                             trails.clear();
+                        }
+                        if let Some((first, last)) = date_picker_range.kernel_coverage {
+                            ui.small(format!("SPICE kernel coverage: {first} to {last}"));
                         }
                     });
 
