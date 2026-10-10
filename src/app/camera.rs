@@ -22,8 +22,9 @@ pub(super) fn handle_jump_requests(
     };
 
     // Selecting a body always returns to the orbit camera (e.g. clicking a
-    // body in the list while flying around in Free mode).
+    // body in the list while flying around in Free mode) and centres on it.
     orbit_camera.mode = CameraMode::Orbit;
+    orbit_camera.pan_offset = DVec3::ZERO;
     simulation_state.selected_body_index = Some(target_index);
     let target_distance = compute_target_distance_for_body(BODIES[target_index].visual_radius);
 
@@ -103,6 +104,7 @@ pub(super) fn toggle_camera_mode_impl(
                     .clamp(orbit_camera.min_distance, orbit_camera.max_distance);
                 let (yaw, pitch) = look_angles_from_direction(offset.normalize_or_zero());
                 orbit_camera.target = target;
+                orbit_camera.pan_offset = DVec3::ZERO;
                 orbit_camera.distance = distance;
                 orbit_camera.yaw = yaw;
                 orbit_camera.pitch = pitch.clamp(MIN_PITCH, MAX_PITCH);
@@ -204,7 +206,11 @@ pub(super) fn orbit_camera_input(
         let right = forward.cross(Vec3::Y).normalize_or_zero();
         let up = Vec3::Y;
         let pan_scale = (orbit_camera.distance * 0.0024).max(0.0005);
-        orbit_camera.target += ((-right * delta.x + up * delta.y) * pan_scale).as_dvec3();
+        let pan = ((-right * delta.x + up * delta.y) * pan_scale).as_dvec3();
+        orbit_camera.target += pan;
+        // Remember the pan relative to the tracked body, or
+        // `track_selected_body` would lerp the pivot straight back onto it.
+        orbit_camera.pan_offset += pan;
         user_override = true;
     }
 
@@ -326,8 +332,10 @@ pub(super) fn track_selected_body(
         return;
     };
 
+    // Follow the body, offset by however far the user has panned from it.
+    let desired = target_position + orbit_camera.pan_offset;
     orbit_camera.target =
-        tracked_target_after_step(orbit_camera.target, target_position, time.delta_secs());
+        tracked_target_after_step(orbit_camera.target, desired, time.delta_secs());
 }
 
 pub(super) fn apply_camera_flight(
@@ -649,6 +657,7 @@ mod tests {
             min_distance: 1.0,
             max_distance: 100.0,
             target: DVec3::ZERO,
+            pan_offset: DVec3::ZERO,
             flight: None,
             free_position: DVec3::ZERO,
             free_yaw: 0.0,
@@ -717,6 +726,7 @@ mod tests {
             min_distance: 1.0,
             max_distance: 100.0,
             target: moon_position.as_dvec3(),
+            pan_offset: DVec3::ZERO,
             flight: None,
             free_position: DVec3::ZERO,
             free_yaw: 0.0,

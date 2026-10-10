@@ -198,6 +198,10 @@ The `spice` Cargo feature (on by default) gates all CSPICE integration with `#[c
 
 `types.rs:BODIES` is the canonical static array of all 19 rendered bodies (18 natural bodies plus the Voyager 1 probe). Every body's display name, SPICE target string, visual radius, texture filename, PBR parameters, spin rate, and atmosphere config live here. Body index is the stable identifier used everywhere (queries, positions vec, camera targeting).
 
+`spin_radians_per_second` is right-handed about `pole_direction`: positive spins the surface counter-clockwise seen from the pole tip, which with the default ecliptic pole is the prograde sense the planets orbit in (Venus and Uranus are negative). A body with its own pole lists the IAU positive pole, so Pluto and Charon stay positive and Charon's orbit runs the same way about that pole. `simulation.rs:spin_step_radians` applies the rate unchanged; the tests there check both senses against the actual `Transform` maths, so don't add a sign flip to "fix" a visual impression without updating them.
+
+Charon and the Galilean moons are *reconstructed*: `update_body_positions` skips them in the ephemeris pass and `apply_*` places them from their primary's scene position with `ephemeris::satellite_offset_au`, the one satellite rule (also used for the Moon in portable mode), phased on absolute Unix days. The ephemeris reports the origin for them, and the Horizons sync skips them (`simulation.rs:RECONSTRUCTED_TARGETS`).
+
 A body with `model_file: Some(..)` (currently only Voyager 1) is spawned from a glTF scene
 under `assets/models/` instead of a textured sphere; the model is authored in metres and
 scaled so `physical_radius_km` (its bounding radius) maps to `visual_radius`. Voyager is in
@@ -239,6 +243,10 @@ Rules that follow from it:
 - Anything drawn or computed in render space must subtract `RenderOrigin` in f64 first:
   the trail/orbit gizmos do, and run `.after(update_camera_transform)` so they use this
   frame's origin.
+- Anything that reads `BodyRuntime::positions` runs `.after(update_body_positions)` (see
+  the `Update` schedule in `mod.rs`). That system is NonSend and waits for the main thread,
+  so an unordered reader can run first on a worker thread and use last frame's positions —
+  at the 100 000× speed cap an atmosphere halo would trail its planet by half a radius.
 - **The Sun is not at the render origin.** The custom WGSL shaders receive its render-space
   position in a `sun_position` uniform (`render.rs:sync_shader_sun_positions`) rather
   than assuming `(0, 0, 0)`.
@@ -254,7 +262,9 @@ On startup (SPICE mode only), `setup::start_horizons_sync` spawns an async task 
 `OrbitCameraState::mode` (`CameraMode::Orbit | Free`) selects between two cameras; `F`
 toggles, and the egui panel exposes a button. **Orbit** (default) is the target-tethered
 inspection camera (drag to orbit, shift-drag to pan, scroll to zoom, click a body to
-fly-to and track). **Free** is an untethered fly-cam: WASD to move, Q/E down/up, drag to
+fly-to and track). A pan is kept in `OrbitCameraState::pan_offset`, so tracking follows
+the body plus the pan instead of lerping the pivot back onto it; jumping to or
+re-tethering on a body zeroes it. **Free** is an untethered fly-cam: WASD to move, Q/E down/up, drag to
 look, Shift to boost. Free-cam speed auto-scales with the distance to the nearest body
 (`FREE_CAMERA_*` constants in `types.rs`) so the same controls work for close inspection
 and interplanetary travel. Mode-switches hand off seamlessly — entering Free seeds the
@@ -347,6 +357,11 @@ To verify the compressed textures actually upload as block-compressed + mipmappe
 ### Custom shaders
 
 `PlanetAtmosphereMaterial` (`materials.rs`) uses `assets/shaders/planet_atmosphere.wgsl`. It is rendered front-face-culled with additive blending and no depth write, creating a limb-glow halo. The `params` uniform encodes `(density, rim_power, forward_phase_power, brightness)`.
+
+The orbit rings (`render.rs:draw_orbit_paths`) are the ellipses `ephemeris::heliocentric_orbit`
+returns for each body on the current date, so each ring passes through its body; the
+`semi_major_axis_au`/`orbital_period_days` fields in `BODIES` are display facts for the panel
+only and drive no geometry.
 
 `PlanetRingMaterial` (`materials.rs`) uses `assets/shaders/planet_ring.wgsl` for Saturn's rings. Its `planet_position` uniform is refreshed every frame by `simulation.rs:sync_ring_material_uniforms` so the shader can cast the planet's cylindrical shadow (umbra) across the ring disc.
 
