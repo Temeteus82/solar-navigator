@@ -12,6 +12,7 @@
 //! The orbital elements are deterministic for a given seed so the belt
 //! looks the same across runs.
 
+use super::simulation::spin_angle_radians;
 use super::types::{
     AU_TO_SCENE_UNITS, AppPaths, RenderSettings, SECONDS_PER_DAY, SimulationState, WorldPosition,
 };
@@ -85,6 +86,9 @@ pub(super) struct AsteroidOrbit {
     pub(super) mean_motion: f64,
     /// Spin rate around the asteroid's local Y axis (rad / sim second).
     pub(super) spin: f32,
+    /// Attitude at simulation time zero; the spin is applied on top of it
+    /// from the absolute simulation time each frame.
+    pub(super) initial_rotation: Quat,
 }
 
 #[derive(Resource)]
@@ -173,17 +177,6 @@ pub(super) fn spawn_asteroid_belt(
         };
         let spin = spin_sign * std::f32::consts::TAU / (spin_hours * 3600.0);
 
-        orbits.push(AsteroidOrbit {
-            a,
-            e,
-            i,
-            raan,
-            arg_peri,
-            mean_anomaly_at_epoch,
-            mean_motion,
-            spin,
-        });
-
         // --- render params ----------------------------------------------------
         // Pick one of the base meshes; non-uniform scale + tilt produce
         // unique-looking rocks from a handful of templates.
@@ -200,6 +193,18 @@ pub(super) fn spawn_asteroid_belt(
             random01(&mut rng_state) * std::f32::consts::TAU,
             random01(&mut rng_state) * std::f32::consts::TAU,
         );
+
+        orbits.push(AsteroidOrbit {
+            a,
+            e,
+            i,
+            raan,
+            arg_peri,
+            mean_anomaly_at_epoch,
+            mean_motion,
+            spin,
+            initial_rotation,
+        });
 
         commands.spawn((
             Mesh3d(mesh_handles[variant].clone()),
@@ -220,10 +225,10 @@ pub(super) fn spawn_asteroid_belt(
     commands.insert_resource(AsteroidBelt { orbits });
 }
 
-/// Per-frame: re-evaluate every asteroid's heliocentric position from
-/// `simulation_state.elapsed_simulation_days` and apply the spin delta.
+/// Per-frame: re-evaluate every asteroid's heliocentric position and spin
+/// phase from `simulation_state.elapsed_simulation_days`, so the belt is a
+/// pure function of the simulation clock like the named bodies.
 pub(super) fn update_asteroid_positions(
-    time: Res<Time>,
     simulation_state: Res<SimulationState>,
     belt: Option<Res<AsteroidBelt>>,
     render_settings: Res<RenderSettings>,
@@ -237,11 +242,6 @@ pub(super) fn update_asteroid_positions(
     }
 
     let elapsed_seconds = simulation_state.elapsed_simulation_days * SECONDS_PER_DAY;
-    let frame_simulation_seconds = if simulation_state.paused {
-        0.0
-    } else {
-        time.delta_secs() * simulation_state.simulation_rate as f32
-    };
 
     for (entity, mut transform, mut world_position) in &mut query {
         let orbit = &belt.orbits[entity.index as usize];
@@ -250,10 +250,8 @@ pub(super) fn update_asteroid_positions(
             [position_au.x, position_au.y, position_au.z],
             AU_TO_SCENE_UNITS,
         );
-
-        if frame_simulation_seconds != 0.0 {
-            transform.rotate_local_y(orbit.spin * frame_simulation_seconds);
-        }
+        transform.rotation = orbit.initial_rotation
+            * Quat::from_rotation_y(spin_angle_radians(orbit.spin, elapsed_seconds));
     }
 }
 
@@ -387,6 +385,7 @@ mod tests {
             mean_anomaly_at_epoch: 0.0,
             mean_motion: TAU / (3.0 * 365.25 * SECONDS_PER_DAY),
             spin: 0.0,
+            initial_rotation: Quat::IDENTITY,
         };
         for k in 0..32 {
             let t = k as f64 * SECONDS_PER_DAY * 30.0;

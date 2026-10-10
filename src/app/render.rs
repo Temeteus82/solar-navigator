@@ -173,14 +173,16 @@ pub(super) fn sync_visibility_toggles(
     let stars_visibility = visibility_for(render_settings.stars_enabled);
     let ring_visibility = visibility_for(render_settings.rings_enabled);
 
+    // `set_if_neq` writes only on change, so an untouched toggle does not
+    // mark every layer changed each frame.
     for mut visibility in &mut atmosphere_query {
-        *visibility = atmosphere_visibility;
+        visibility.set_if_neq(atmosphere_visibility);
     }
     for mut visibility in &mut stars_query {
-        *visibility = stars_visibility;
+        visibility.set_if_neq(stars_visibility);
     }
     for mut visibility in &mut ring_query {
-        *visibility = ring_visibility;
+        visibility.set_if_neq(ring_visibility);
     }
 }
 

@@ -5,7 +5,7 @@ use super::types::{
     CloudLayer, CloudOf, EphemerisResource, HorizonsHttpClient, HorizonsSyncResult,
     HorizonsSyncState, HorizonsSyncTaskInput, HorizonsTargetSample, KM_PER_AU, LightingRig,
     MainCamera, PlanetRing, PlanetTextureEntry, PlanetTextureRegistry, RingOf, StarsBackdrop,
-    TextureStatus, WorldPosition, model_scale,
+    TextureStatus, WorldPosition, model_scale, pole_rotation, ring_rotation,
 };
 use super::util::{
     color_from_rgba, eclipj2000_to_scene, equirectangular_to_cubemap_image, linear_from_rgb,
@@ -67,10 +67,12 @@ pub(super) fn setup_scene(
         Camera3d::default(),
         Msaa::Off,
         Tonemapping::AcesFitted,
-        // Auto-exposure adapts to each planet's local light level so outer
-        // planets aren't crushed to black by the Sun's inverse-square falloff.
-        // Range is widened past the default (±8 stops) because solar-system
-        // luminance spans ~12 stops from Mercury to Neptune.
+        // Auto-exposure evens out the view between a sunlit limb and deep
+        // space. The range is kept to ±2 stops, far inside Bevy's ±8 default:
+        // planet shading comes from the distance-independent directional
+        // light (`render.rs:apply_lighting_preset`), so there is no
+        // inverse-square dimming to compensate for, and a wider range would
+        // let a frame of mostly black sky over-brighten whatever is in it.
         AutoExposure {
             range: -2.0..=2.0,
             speed_brighten: 2.0,
@@ -220,14 +222,10 @@ pub(super) fn setup_scene(
             .spawn((
                 Mesh3d(sphere_handle),
                 MeshMaterial3d(material),
-                // Bevy UV-sphere mesh has poles on +Z/-Z; rotate so the local +Z axis
-                // aligns with the body's spin pole. Per-frame `rotate_local_z` then
-                // spins the texture around that axis. Matches `Quat::from_rotation_x(-FRAC_PI_2)`
-                // for the default ecliptic-Y pole and tilts e.g. Pluto onto its side.
-                Transform::from_rotation(Quat::from_rotation_arc(
-                    Vec3::Z,
-                    Vec3::from_array(spec.pole_direction).normalize(),
-                )),
+                // Stand the mesh's +Z pole on the body's spin pole; the per-frame
+                // spin in `update_body_positions` rebuilds this from the same
+                // rotation plus the phase. Tilts e.g. Pluto onto its side.
+                Transform::from_rotation(pole_rotation(spec)),
                 WorldPosition::default(),
                 BodyEntity { index },
             ))
@@ -303,10 +301,7 @@ pub(super) fn setup_scene(
                         MeshMaterial3d(cloud_material),
                         // Same pole pre-rotation as the body; `sync_cloud_layers`
                         // then spins it about local +Z at the super-rotation rate.
-                        Transform::from_rotation(Quat::from_rotation_arc(
-                            Vec3::Z,
-                            Vec3::from_array(spec.pole_direction).normalize(),
-                        )),
+                        Transform::from_rotation(pole_rotation(spec)),
                         WorldPosition::default(),
                         CloudLayer,
                         CloudOf { index },
@@ -355,11 +350,12 @@ pub(super) fn setup_scene(
                 // Set every frame by `sync_shader_sun_positions`.
                 sun_position: Vec4::ZERO,
             });
-            let tilt = Quat::from_rotation_x(ring.axial_tilt_degrees.to_radians());
+            // Lay the disc in the equatorial plane of the pole the planet
+            // itself spins about, so rings and spin axis cannot disagree.
             commands.spawn((
                 Mesh3d(ring_handle),
                 MeshMaterial3d(ring_material),
-                Transform::from_rotation(tilt),
+                Transform::from_rotation(ring_rotation(spec)),
                 WorldPosition::default(),
                 PlanetRing,
                 RingOf { index },

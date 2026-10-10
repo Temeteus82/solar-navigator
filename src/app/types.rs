@@ -14,8 +14,7 @@ pub(super) const TRAIL_MAX_POINTS: usize = 512;
 pub(super) const MAX_FRAME_RATE: f64 = 60.0;
 
 pub(super) const AU_TO_SCENE_UNITS: f64 = 250.0;
-pub(super) const KM_PER_AU: f64 = 149_597_870.7;
-pub(super) const SECONDS_PER_DAY: f64 = 86_400.0;
+pub(super) use crate::ephemeris::{KM_PER_AU, SECONDS_PER_DAY};
 pub(super) const DEFAULT_SIMULATION_RATE_MULTIPLIER: f64 = 1.0;
 pub(super) const MIN_SIMULATION_RATE_MULTIPLIER: f64 = 0.01;
 pub(super) const MAX_SIMULATION_RATE_MULTIPLIER: f64 = 100_000.0;
@@ -38,11 +37,13 @@ pub(super) const FREE_CAMERA_LOOK_SENSITIVITY: f32 = 0.0026; // radians per pixe
 pub(super) const ORBIT_KEY_ROTATE_SPEED: f32 = 1.2; // radians/s of yaw or pitch while a key is held
 pub(super) const ORBIT_KEY_ZOOM_RATE: f32 = 1.5; // exponential zoom rate per second while Q/E is held
 
+/// A ring system, laid in the body's equatorial plane: the disc's normal is
+/// the body's `pole_direction`, so the rings and the planet's spin axis can
+/// never disagree.
 #[derive(Clone, Copy)]
 pub(super) struct RingSpec {
     pub(super) inner_radius: f32,
     pub(super) outer_radius: f32,
-    pub(super) axial_tilt_degrees: f32,
 }
 
 /// What sort of body a `BodySpec` is; groups the target dropdown. Variant
@@ -115,14 +116,21 @@ pub(super) struct BodySpec {
     pub(super) semi_major_axis_au: Option<f64>,
     pub(super) rings: Option<RingSpec>,
     // Spin pole direction in scene space (Y-up). Default ECLIPTIC_POLE_SCENE.
-    // Used for the body's mesh orientation and as the orbit normal for any
-    // satellite parented to it (e.g. Charon orbits in Pluto's equatorial plane).
+    // Used for the body's mesh orientation, the plane of its rings, and as the
+    // orbit normal for any satellite parented to it (e.g. Charon orbits in
+    // Pluto's equatorial plane).
     pub(super) pole_direction: [f32; 3],
 }
 
 // Ecliptic north pole expressed in scene space (Bevy Y-up). Default for every body
 // whose obliquity isn't separately specified.
 pub(super) const ECLIPTIC_POLE_SCENE: [f32; 3] = [0.0, 1.0, 0.0];
+
+// Saturn's IAU spin pole (RA = 40.589°, Dec = 83.537°), converted from
+// equatorial J2000 to ecliptic and remapped into scene space; 28.05° from
+// ecliptic north (26.73° obliquity to its own orbit plus the orbit's tilt).
+// The rings lie in the equatorial plane this pole defines.
+pub(super) const SATURN_POLE_SCENE: [f32; 3] = [0.085_48, 0.882_52, -0.462_44];
 
 // Pluto's IAU 2009 spin pole (RA = 132.993°, Dec = -6.163°), converted from
 // equatorial J2000 to ecliptic and remapped into scene space. It is the
@@ -803,9 +811,8 @@ pub(super) const BODIES: [BodySpec; 19] = [
         rings: Some(RingSpec {
             inner_radius: 1.72,
             outer_radius: 3.53,
-            axial_tilt_degrees: 26.73,
         }),
-        pole_direction: ECLIPTIC_POLE_SCENE,
+        pole_direction: SATURN_POLE_SCENE,
     },
     BodySpec {
         display_name: "Uranus",
@@ -942,6 +949,21 @@ pub(super) fn model_scale(spec: &BodySpec) -> f32 {
     spec.visual_radius / (spec.physical_radius_km * 1_000.0) as f32
 }
 
+/// Rotation that stands a mesh's local +Z on the body's `pole_direction`.
+/// Bevy's UV sphere has its poles (and its texture's north) on +Z, so this
+/// orients both the body and its cloud shell; the ring disc (normal +Y) uses
+/// `ring_rotation`. Equals `Quat::from_rotation_x(-FRAC_PI_2)` for the
+/// default ecliptic pole.
+pub(super) fn pole_rotation(spec: &BodySpec) -> Quat {
+    Quat::from_rotation_arc(Vec3::Z, Vec3::from_array(spec.pole_direction).normalize())
+}
+
+/// Rotation that lays `util::ring_mesh`'s +Y-normal disc in the body's
+/// equatorial plane.
+pub(super) fn ring_rotation(spec: &BodySpec) -> Quat {
+    Quat::from_rotation_arc(Vec3::Y, Vec3::from_array(spec.pole_direction).normalize())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -955,6 +977,33 @@ mod tests {
     fn sidereal_spin_radians_per_second_preserves_retrograde_sign() {
         assert!(sidereal_spin_radians_per_second(1.0) > 0.0);
         assert!(sidereal_spin_radians_per_second(-1.0) < 0.0);
+    }
+
+    #[test]
+    fn body_poles_are_unit_vectors_and_saturn_matches_its_obliquity() {
+        for body in BODIES {
+            let pole = Vec3::from_array(body.pole_direction);
+            assert!(
+                (pole.length() - 1.0).abs() < 1e-4,
+                "{} pole",
+                body.display_name
+            );
+        }
+        let saturn = Vec3::from_array(SATURN_POLE_SCENE);
+        let tilt_deg = saturn.dot(Vec3::Y).acos().to_degrees();
+        assert!(
+            (tilt_deg - 28.05).abs() < 0.05,
+            "Saturn pole tilt {tilt_deg}"
+        );
+    }
+
+    #[test]
+    fn ring_rotation_puts_the_disc_normal_on_the_pole() {
+        let saturn = BODIES.iter().find(|b| b.display_name == "Saturn").unwrap();
+        let normal = ring_rotation(saturn) * Vec3::Y;
+        let pole = Vec3::from_array(saturn.pole_direction);
+        assert!((normal - pole).length() < 1e-5);
+        assert!(((pole_rotation(saturn) * Vec3::Z) - pole).length() < 1e-5);
     }
 
     fn unix_days(year: i32, month: u32, day: u32) -> f64 {

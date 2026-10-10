@@ -194,11 +194,13 @@ The `spice` Cargo feature (on by default) gates all CSPICE integration with `#[c
 
 `SpiceEphemeris` is stored as `NonSend` (`EphemerisResource`) because the SPICE lock (`Mutex<SpiceLock>`) must not be sent across threads.
 
+There is one launch instant: `SpiceEphemeris::start_utc()`, read once at construction. The SPICE epoch (`base_et`), every analytic position (`unix_days_at`), the panel's date label (`SimulationEpoch`) and the date picker's initial value all derive from it, so "simulation day 0" is the same date everywhere. Don't read `Utc::now()` for anything that means launch time; the Horizons sync's own timestamp is the one legitimate separate "now".
+
 ### BODIES array and BodySpec
 
 `types.rs:BODIES` is the canonical static array of all 19 rendered bodies (18 natural bodies plus the Voyager 1 probe). Every body's display name, SPICE target string, visual radius, texture filename, PBR parameters, spin rate, and atmosphere config live here. Body index is the stable identifier used everywhere (queries, positions vec, camera targeting).
 
-`spin_radians_per_second` is right-handed about `pole_direction`: positive spins the surface counter-clockwise seen from the pole tip, which with the default ecliptic pole is the prograde sense the planets orbit in (Venus and Uranus are negative). A body with its own pole lists the IAU positive pole, so Pluto and Charon stay positive and Charon's orbit runs the same way about that pole. `simulation.rs:spin_step_radians` applies the rate unchanged; the tests there check both senses against the actual `Transform` maths, so don't add a sign flip to "fix" a visual impression without updating them.
+`spin_radians_per_second` is right-handed about `pole_direction`: positive spins the surface counter-clockwise seen from the pole tip, which with the default ecliptic pole is the prograde sense the planets orbit in (Venus and Uranus are negative). A body with its own pole lists the IAU positive pole, so Pluto and Charon stay positive and Charon's orbit runs the same way about that pole. `simulation.rs:spin_angle_radians` turns the rate into a phase from the absolute simulation time (so a date jump turns the globe with the clock, and the result does not depend on frame history); the tests there check both senses against the actual `Transform` maths, so don't add a sign flip to "fix" a visual impression without updating them. Saturn's rings lie in the equatorial plane of its `pole_direction` (`types.rs:ring_rotation`), the same pole it spins about.
 
 Charon and the Galilean moons are *reconstructed*: `update_body_positions` skips them in the ephemeris pass and `apply_*` places them from their primary's scene position with `ephemeris::satellite_offset_au`, the one satellite rule (also used for the Moon in portable mode), phased on absolute Unix days. The ephemeris reports the origin for them, and the Horizons sync skips them (`simulation.rs:RECONSTRUCTED_TARGETS`).
 
@@ -286,8 +288,9 @@ is dimmed to 80 MW with shadows disabled — it only adds inner-system specular 
 bloom near the Sun. A low ambient (0.25) lifts the night side.
 
 The `MainCamera` carries post-processing that shapes the final image: `AutoExposure` (range
-widened past the default so outer planets aren't crushed to black), `Bloom`, and SSAO (fed
-by depth/normal prepasses), plus `ContactShadows`. Body visual radii are ~15× their physical
+kept to ±2 stops, well inside Bevy's ±8 default: planet shading has no inverse-square dimming
+to compensate for, and a wider range over-brightens a frame of mostly black sky), `Bloom`, and
+SSAO (fed by depth/normal prepasses), plus `ContactShadows`. Body visual radii are ~15× their physical
 size so they read at solar-system scale without being artificially huge.
 
 Bevy's world-unit defaults for the sun's shadow cascades and depth bias, SSAO thickness and

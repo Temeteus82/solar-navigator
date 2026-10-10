@@ -4,6 +4,7 @@ use super::types::{
     CLOUD_SUPERROTATION_RADIANS_PER_SECOND, CameraMode, CloudLayer, CloudOf, EphemerisResource,
     HorizonsSyncState, MAX_SIMULATION_RATE_MULTIPLIER, MIN_SIMULATION_RATE_MULTIPLIER,
     OrbitCameraState, PlanetRing, RingOf, SECONDS_PER_DAY, SimulationState, WorldPosition,
+    pole_rotation,
 };
 use super::util::eclipj2000_to_scene;
 use crate::ephemeris::{
@@ -13,6 +14,7 @@ use crate::ephemeris::{
 use bevy::math::DVec3;
 use bevy::prelude::*;
 use bevy_egui::input::EguiWantsInput;
+use std::f64::consts::TAU;
 
 const CHARON_TO_PLUTO_MASS_RATIO: f64 = 0.1218;
 
@@ -79,7 +81,6 @@ pub(super) fn advance_simulation_time(
 }
 
 pub(super) fn update_body_positions(
-    time: Res<Time>,
     simulation_state: Res<SimulationState>,
     ephemeris: NonSend<EphemerisResource>,
     horizons_sync: Res<HorizonsSyncState>,
@@ -87,11 +88,7 @@ pub(super) fn update_body_positions(
     mut body_query: Query<(&BodyEntity, &mut Transform, &mut WorldPosition)>,
 ) {
     let au_to_scene_units = AU_TO_SCENE_UNITS;
-    let frame_simulation_seconds = if simulation_state.paused {
-        0.0
-    } else {
-        time.delta_secs() * simulation_state.simulation_rate as f32
-    };
+    let elapsed_seconds = simulation_state.elapsed_simulation_days * SECONDS_PER_DAY;
     let mut scene_positions = vec![DVec3::ZERO; BODIES.len()];
 
     for body_index in 0..BODIES.len() {
@@ -135,14 +132,16 @@ pub(super) fn update_body_positions(
                 transform.rotation = Quat::from_rotation_arc(Vec3::Y, sunward);
             }
         } else {
-            let spin_step =
-                spin_step_radians(spec.spin_radians_per_second, frame_simulation_seconds);
-            if spin_step != 0.0 {
-                // After the mesh pre-rotation in setup, local +Z is the body's
-                // `pole_direction`; a positive step is right-handed about it,
-                // the same sense the orbits run in (see `spin_step_radians`).
-                transform.rotate_local_z(spin_step);
-            }
+            // Rotation phase is a function of simulation time, not an
+            // accumulation of per-frame steps, so a date jump or Backspace
+            // turns the globe along with the clock and the result is the
+            // same however the clock got there. Local +Z is the body's
+            // `pole_direction`; a positive angle is right-handed about it.
+            transform.rotation = pole_rotation(&spec)
+                * Quat::from_rotation_z(spin_angle_radians(
+                    spec.spin_radians_per_second,
+                    elapsed_seconds,
+                ));
         }
 
         if let Some(slot) = body_runtime.positions.get_mut(body.index) {
@@ -227,15 +226,17 @@ fn apply_pluto_charon_center_positions(
         pluto_charon_barycenter + charon_from_pluto * pluto_mass_fraction;
 }
 
-/// Rotation to apply about a body's local +Z (its `pole_direction`) this
-/// frame. The sign is the body's own: `BodySpec::spin_radians_per_second` is
-/// positive for right-handed rotation about the pole, which for the planets
-/// (pole = ecliptic north) is the prograde sense they orbit in, so an
-/// eastward-moving surface and a counter-clockwise orbit seen from north go
-/// together. Venus and Uranus carry negative rates; Pluto and Charon are
-/// positive about their tilted shared pole, matching Charon's orbit.
-fn spin_step_radians(spin_radians_per_second: f32, frame_seconds: f32) -> f32 {
-    spin_radians_per_second * frame_seconds
+/// Rotation angle about a body's local +Z (its `pole_direction`) at
+/// `simulation_seconds` from launch, reduced to one turn. The sign is the
+/// body's own: `BodySpec::spin_radians_per_second` is positive for
+/// right-handed rotation about the pole, which for the planets (pole =
+/// ecliptic north) is the prograde sense they orbit in, so an eastward-moving
+/// surface and a counter-clockwise orbit seen from north go together. Venus
+/// and Uranus carry negative rates; Pluto and Charon are positive about their
+/// tilted shared pole, matching Charon's orbit. The product is taken in f64:
+/// 400 years of Earth spin is ~10^6 rad, more than f32 keeps to a degree.
+pub(super) fn spin_angle_radians(spin_radians_per_second: f32, simulation_seconds: f64) -> f32 {
+    (f64::from(spin_radians_per_second) * simulation_seconds).rem_euclid(TAU) as f32
 }
 
 pub(super) fn sync_atmosphere_positions(
@@ -253,27 +254,22 @@ pub(super) fn sync_atmosphere_positions(
 /// body's pole at the super-rotation rate, so the clouds drift over the surface
 /// map. Mirrors `sync_atmosphere_positions` but adds the independent rotation.
 pub(super) fn sync_cloud_layers(
-    time: Res<Time>,
     simulation_state: Res<SimulationState>,
     body_runtime: Res<BodyRuntime>,
     mut cloud_query: Query<(&CloudOf, &mut Transform, &mut WorldPosition), With<CloudLayer>>,
 ) {
-    let frame_simulation_seconds = if simulation_state.paused {
-        0.0
-    } else {
-        time.delta_secs() * simulation_state.simulation_rate as f32
-    };
-    let spin_step = spin_step_radians(
+    let elapsed_seconds = simulation_state.elapsed_simulation_days * SECONDS_PER_DAY;
+    let spin = Quat::from_rotation_z(spin_angle_radians(
         CLOUD_SUPERROTATION_RADIANS_PER_SECOND,
-        frame_simulation_seconds,
-    );
+        elapsed_seconds,
+    ));
 
     for (cloud, mut transform, mut world_position) in &mut cloud_query {
         if let Some(&position) = body_runtime.positions.get(cloud.index) {
             world_position.0 = position;
         }
-        if spin_step != 0.0 {
-            transform.rotate_local_z(spin_step);
+        if let Some(spec) = BODIES.get(cloud.index) {
+            transform.rotation = pole_rotation(spec) * spin;
         }
     }
 }
@@ -311,35 +307,52 @@ pub(super) fn sync_ring_material_uniforms(
 
 #[cfg(test)]
 mod tests {
-    use super::super::types::{BodySpec, KM_PER_AU};
+    use super::super::types::{BodySpec, KM_PER_AU, pole_rotation};
     use super::{
         CHARON_TO_PLUTO_MASS_RATIO, apply_jupiter_moon_positions,
         apply_pluto_charon_center_positions, body_index_for_target, charon_relative_scene_offset,
-        position_is_reconstructed, spin_step_radians,
+        position_is_reconstructed, spin_angle_radians,
     };
     use crate::ephemeris::{CALLISTO_ORBIT, CHARON_ORBIT, IO_ORBIT};
     use bevy::math::DVec3;
     use bevy::prelude::*;
+    use std::f64::consts::TAU;
 
     #[test]
-    fn spin_step_radians_keeps_the_rate_sign() {
-        assert_eq!(spin_step_radians(0.5, 2.0), 1.0);
-        assert_eq!(spin_step_radians(-0.5, 2.0), -1.0);
+    fn spin_angle_radians_keeps_the_rate_sign_within_one_turn() {
+        assert!((spin_angle_radians(0.5, 2.0) - 1.0).abs() < 1e-6);
+        assert!((f64::from(spin_angle_radians(-0.5, 2.0)) - (TAU - 1.0)).abs() < 1e-6);
+        assert_eq!(spin_angle_radians(0.5, 0.0), 0.0);
     }
 
-    /// Drives a body's `Transform` exactly as `setup_scene` and
-    /// `update_body_positions` do and returns a surface point before and
-    /// after one spin step.
+    #[test]
+    fn spin_angle_radians_is_exact_after_centuries() {
+        // Earth, 400 years on: ~10^6 rad. Reduced in f64 the phase is still
+        // good to a small fraction of a degree, where f32 arithmetic would
+        // have lost whole turns.
+        let earth = super::BODIES
+            .iter()
+            .find(|b| b.display_name == "Earth")
+            .unwrap();
+        let seconds = 400.0 * 365.25 * super::SECONDS_PER_DAY;
+        let exact = (f64::from(earth.spin_radians_per_second) * seconds).rem_euclid(TAU);
+        let actual = f64::from(spin_angle_radians(earth.spin_radians_per_second, seconds));
+        assert!((actual - exact).abs() < 1e-5);
+    }
+
+    /// Orients a body's `Transform` exactly as `update_body_positions` does
+    /// and returns a surface point at launch and one minute later.
     fn surface_point_before_and_after_spin(spec: &BodySpec) -> (Vec3, Vec3, Vec3) {
         let pole = Vec3::from_array(spec.pole_direction).normalize();
-        let mut transform = Transform::from_rotation(Quat::from_rotation_arc(Vec3::Z, pole));
         // A point on the mesh's equator (Bevy's UV sphere has its poles on
         // local +-Z and its texture's north at +Z).
         let local = Vec3::X;
-        let before = transform.rotation * local;
-        transform.rotate_local_z(spin_step_radians(spec.spin_radians_per_second, 60.0));
-        let after = transform.rotation * local;
-        (pole, before, after)
+        let at = |seconds: f64| {
+            (pole_rotation(spec)
+                * Quat::from_rotation_z(spin_angle_radians(spec.spin_radians_per_second, seconds)))
+                * local
+        };
+        (pole, at(0.0), at(60.0))
     }
 
     #[test]
@@ -394,8 +407,8 @@ mod tests {
     }
 
     #[test]
-    fn spin_step_radians_zero_rate_is_zero() {
-        assert_eq!(spin_step_radians(0.0, 2.0), 0.0);
+    fn spin_angle_radians_zero_rate_is_zero() {
+        assert_eq!(spin_angle_radians(0.0, 2.0e9), 0.0);
     }
 
     #[test]

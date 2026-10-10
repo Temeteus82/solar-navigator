@@ -6,7 +6,7 @@ were verified against primary sources: the `de440s.bsp` comment area, and the
 rust-spice 1.0.1, bevy_mesh 0.19.1 and bevy_post_process 0.19.1 crate sources.
 The test suite was not run as part of the review.
 
-Status key: **fixed** (item 1 in PR #91, items 2–6 in the follow-up PR that marks them so), **open**.
+Status key: **fixed** (item 1 in PR #91, items 2–6 in PR #92, items 7–13 in the PR that marks them so).
 
 ## Must fix
 
@@ -80,28 +80,42 @@ Status key: **fixed** (item 1 in PR #91, items 2–6 in the follow-up PR that ma
 
 7. **Startup hitch:** `util.rs:image_to_rgba8_data` clones the 8K Milky Way
    image and then clones its data again, ~270 MB of transient copies on the main
-   thread. Borrow the data for the already-RGBA8 case. — open
+   thread. Borrow the data for the already-RGBA8 case. — **fixed** (returns a
+   `Cow`, borrowed for RGBA8, moved out of the converted image otherwise)
 8. **Auto-exposure comment contradicts the code:** `setup.rs` says the range is
    widened past the default, but `-2.0..=2.0` narrows Bevy's `-8.0..=8.0`
-   default. CLAUDE.md repeats the claim. Decide which is intended. — open
+   default. CLAUDE.md repeats the claim. Decide which is intended. — **fixed**
+   (comment and CLAUDE.md corrected; the value stays: the comment's premise,
+   inverse-square dimming of outer planets, no longer holds since planet
+   shading comes from the distance-independent directional light, and the
+   narrow range keeps a mostly-black frame from over-brightening)
 9. **Saturn's rings are not in its equatorial plane:** the ring is tilted 26.73°
    (`types.rs` `RingSpec`, `setup.rs`) while Saturn's `pole_direction` stays
    ecliptic, so the planet spins about a different axis than its rings. Drive
-   both from `pole_direction`. — open
+   both from `pole_direction`. — **fixed** (`SATURN_POLE_SCENE` from the IAU
+   pole, rings laid with `ring_rotation`; `RingSpec::axial_tilt_degrees` gone)
 10. **Three independent "day zero" clocks:** `SpiceEphemeris.start_unix_days`,
     `base_et` from a whole-second string, and `SimulationEpoch.start_utc`.
-    Sub-second apart today, but nothing ties them together. — open
+    Sub-second apart today, but nothing ties them together. — **fixed** (one
+    `Utc::now()` in `SpiceEphemeris::new`, exposed as `start_utc()`; the SPICE
+    epoch is parsed from it to the millisecond and `mod.rs` builds
+    `SimulationEpoch` and the picker from it)
 11. **Spin is integrated incrementally**, so "Go to Date" and Backspace leave
     rotation phase untouched. Setting rotation from absolute simulation time
-    would make it deterministic. — open
+    would make it deterministic. — **fixed** (`spin_angle_radians` gives the
+    phase from the absolute simulation time, in f64; bodies, cloud shells and
+    asteroids rebuild their rotation from it each frame)
 12. **Per-frame churn:** `render.rs:sync_visibility_toggles` writes `Visibility`
     unconditionally every frame (compare first, like
     `sync_asteroid_visibility`). `PointLightShadowMap { size: 2048 }` in
-    `mod.rs` is dead since point-light shadows are disabled every frame. — open
+    `mod.rs` is dead since point-light shadows are disabled every frame. —
+    **fixed** (`set_if_neq`; resource removed)
 13. **Comment and constant nits:** `PLUTO_ELEMENTS` epoch JD 2457588.5 is
     2016-07-19, not 07-31. `solve_kepler`'s "e ≤ 0.2" bound is now exceeded by
     Pluto (0.252). `KM_PER_AU` and `SECONDS_PER_DAY` are defined in both
-    `ephemeris.rs` and `types.rs`. — open
+    `ephemeris.rs` and `types.rs`. — **fixed** (date corrected; the solver's
+    doc states the measured bound and its test covers e = 0.26; `types.rs`
+    re-exports the ephemeris constants)
 
 ## What looked good
 
