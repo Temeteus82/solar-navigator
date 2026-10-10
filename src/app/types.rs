@@ -94,8 +94,11 @@ pub(super) struct BodySpec {
     // are ignored. The model is authored in metres and scaled so that
     // `physical_radius_km` (its bounding radius) maps to `visual_radius`.
     pub(super) model_file: Option<&'static str>,
-    // Signed sidereal spin rate in radians per simulated second.
-    // Positive = prograde, negative = retrograde.
+    // Signed sidereal spin rate in radians per simulated second, right-handed
+    // about `pole_direction`: positive spins the surface counter-clockwise
+    // seen from the pole tip. With the default ecliptic pole that is prograde
+    // (Venus and Uranus go negative); a body with its own pole (Pluto, Charon)
+    // lists the IAU positive pole and so stays positive.
     pub(super) spin_radians_per_second: f32,
     pub(super) mesh_subdivisions: u32,
     pub(super) metallic: f32,
@@ -122,8 +125,11 @@ pub(super) struct BodySpec {
 pub(super) const ECLIPTIC_POLE_SCENE: [f32; 3] = [0.0, 1.0, 0.0];
 
 // Pluto's IAU 2009 spin pole (RA = 132.993°, Dec = -6.163°), converted from
-// equatorial J2000 to ecliptic and remapped into scene space. Charon shares this
-// pole — the system is mutually tidally locked.
+// equatorial J2000 to ecliptic and remapped into scene space. It is the
+// right-hand-rule positive pole (it points south of the ecliptic: Pluto's
+// obliquity is ~120°), so Pluto's and Charon's spin rates are positive about
+// it and Charon's orbit (`simulation.rs:charon_relative_scene_offset`) runs
+// right-handed about it too — the system is mutually tidally locked.
 pub(super) const PLUTO_POLE_SCENE: [f32; 3] = [-0.677_73, -0.387_86, -0.624_69];
 
 const fn sidereal_spin_radians_per_second(sidereal_period_days: f64) -> f32 {
@@ -402,6 +408,11 @@ pub(super) struct OrbitCameraState {
     pub(super) min_distance: f32,
     pub(super) max_distance: f32,
     pub(super) target: DVec3,
+    /// Where the user has panned the orbit pivot away from the tracked body,
+    /// in world axes. `track_selected_body` follows the body plus this, so a
+    /// shift-drag pan holds instead of being lerped back onto the body;
+    /// jumping to or re-tethering on a body zeroes it.
+    pub(super) pan_offset: DVec3,
     pub(super) flight: Option<CameraFlight>,
     // Free-camera state: world-space position and look angles. Seeded from the
     // orbit camera on entering Free mode so the handoff is seamless.
@@ -853,7 +864,7 @@ pub(super) const BODIES: [BodySpec; 19] = [
         texture_file: "pluto.png",
         cloud_texture: None,
         model_file: None,
-        spin_radians_per_second: sidereal_spin_radians_per_second(-6.38723),
+        spin_radians_per_second: sidereal_spin_radians_per_second(6.38723),
         mesh_subdivisions: 48,
         metallic: 0.0,
         roughness: 0.86,
@@ -877,7 +888,7 @@ pub(super) const BODIES: [BodySpec; 19] = [
         texture_file: "charon.png",
         cloud_texture: None,
         model_file: None,
-        spin_radians_per_second: sidereal_spin_radians_per_second(-6.38723),
+        spin_radians_per_second: sidereal_spin_radians_per_second(6.38723),
         mesh_subdivisions: 36,
         metallic: 0.0,
         roughness: 0.9,

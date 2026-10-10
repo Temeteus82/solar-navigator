@@ -2,10 +2,11 @@ use super::camera::view_focus_distance;
 use super::materials::{PlanetAtmosphereMaterial, PlanetRingMaterial};
 use super::types::{
     AU_TO_SCENE_UNITS, AppStatus, AtmosphereLayer, BODIES, BodyRuntime, BodyTrails, CameraMode,
-    LightingRig, MAX_FRAME_RATE, MainCamera, OrbitCameraState, PlanetRing, RenderOrigin,
-    RenderSettings, SimulationState, StarsBackdrop, TRAIL_MAX_POINTS, WorldPosition,
+    EphemerisResource, LightingRig, MAX_FRAME_RATE, MainCamera, OrbitCameraState, PlanetRing,
+    RenderOrigin, RenderSettings, SimulationState, StarsBackdrop, TRAIL_MAX_POINTS, WorldPosition,
 };
-use super::util::format_simulation_speed;
+use super::util::{eclipj2000_to_scene, format_simulation_speed};
+use crate::ephemeris::heliocentric_orbit;
 use bevy::light::{CascadeShadowConfig, CascadeShadowConfigBuilder};
 use bevy::math::DVec3;
 use bevy::pbr::{ContactShadows, ScreenSpaceAmbientOcclusion};
@@ -305,30 +306,45 @@ pub(super) fn draw_body_trails(
     }
 }
 
+/// Points along each orbit ring. Pluto's ellipse (e 0.25) needs the most to
+/// stay smooth near perihelion; the cost is one Kepler solve per point.
+const ORBIT_PATH_SEGMENTS: u32 = 192;
+
+/// Draws each heliocentric body's orbit as the ellipse its own elements
+/// describe on the current date (`ephemeris::heliocentric_orbit`), so the
+/// ring passes through the body: Pluto's 17 deg tilt and 0.25 eccentricity
+/// take it ~10 AU off the flat circle of its semi-major axis. In SPICE mode
+/// the ring is the analytic stand-in, within ~0.3 deg of the kernel.
 pub(super) fn draw_orbit_paths(
     render_settings: Res<RenderSettings>,
     simulation_state: Res<SimulationState>,
+    ephemeris: NonSend<EphemerisResource>,
     render_origin: Res<RenderOrigin>,
     mut gizmos: Gizmos,
 ) {
     if !render_settings.orbits_enabled {
         return;
     }
+    let unix_days = ephemeris
+        .ephemeris
+        .unix_days_at(simulation_state.elapsed_simulation_days);
     for (index, spec) in BODIES.iter().enumerate() {
-        let Some(sma_au) = spec.semi_major_axis_au else {
+        let Some(orbit) = heliocentric_orbit(spec.spice_target, unix_days) else {
             continue;
         };
-        let radius = sma_au * AU_TO_SCENE_UNITS;
         let is_selected = simulation_state.selected_body_index == Some(index);
         let alpha = if is_selected { 0.55 } else { 0.12 };
         let color = Color::srgba(spec.color[0], spec.color[1], spec.color[2], alpha);
         // Feed the ring points straight into the gizmo iterator instead of
         // collecting into a per-frame Vec for every body.
         gizmos.linestrip(
-            (0..=128).map(|i| {
-                let a = f64::from(i) / 128.0 * TAU;
+            (0..=ORBIT_PATH_SEGMENTS).map(|i| {
+                let mean_anomaly = f64::from(i) / f64::from(ORBIT_PATH_SEGMENTS) * TAU;
                 render_space(
-                    DVec3::new(radius * a.cos(), 0.0, radius * a.sin()),
+                    eclipj2000_to_scene(
+                        orbit.position_at_mean_anomaly_au(mean_anomaly),
+                        AU_TO_SCENE_UNITS,
+                    ),
                     render_origin.0,
                 )
             }),

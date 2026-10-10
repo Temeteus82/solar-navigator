@@ -213,10 +213,41 @@ fn planet_mean_elements(target: &str) -> Option<&'static PlanetMeanElements> {
 const J2000_UNIX_DAYS: f64 = 10_957.5;
 const DAYS_PER_JULIAN_CENTURY: f64 = 36_525.0;
 
+/// A heliocentric Keplerian ellipse (ECLIPJ2000, angles in radians) with the
+/// body's mean anomaly on it at one instant. `position_au` is where the body
+/// is; `position_at_mean_anomaly_au` traces the whole ellipse for an orbit
+/// ring that passes through that point.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct OsculatingOrbit {
+    pub semi_major_axis_au: f64,
+    pub eccentricity: f64,
+    pub inclination: f64,
+    pub ascending_node: f64,
+    pub arg_perihelion: f64,
+    pub mean_anomaly: f64,
+}
+
+impl OsculatingOrbit {
+    pub fn position_au(&self) -> [f64; 3] {
+        self.position_at_mean_anomaly_au(self.mean_anomaly)
+    }
+
+    pub fn position_at_mean_anomaly_au(&self, mean_anomaly: f64) -> [f64; 3] {
+        orbital_position_au(
+            self.semi_major_axis_au,
+            self.eccentricity,
+            self.inclination,
+            self.ascending_node,
+            self.arg_perihelion,
+            mean_anomaly,
+        )
+    }
+}
+
 /// The approximate-positions recipe: evaluate each element at `T` Julian
-/// centuries past J2000, then solve the ellipse. UTC stands in for TDB here;
-/// the ~70 s difference is far below the tables' own accuracy.
-fn planet_position_au(elements: &PlanetMeanElements, unix_days: f64) -> [f64; 3] {
+/// centuries past J2000. UTC stands in for TDB here; the ~70 s difference is
+/// far below the tables' own accuracy.
+fn planet_orbit(elements: &PlanetMeanElements, unix_days: f64) -> OsculatingOrbit {
     let t = (unix_days - J2000_UNIX_DAYS) / DAYS_PER_JULIAN_CENTURY;
     let at = |[value, rate]: [f64; 2]| value + rate * t;
 
@@ -228,28 +259,40 @@ fn planet_position_au(elements: &PlanetMeanElements, unix_days: f64) -> [f64; 3]
         mean_anomaly += b * t * t + c * cos_ft + s * sin_ft;
     }
 
-    orbital_position_au(
-        at(elements.semi_major_axis_au),
-        at(elements.eccentricity),
-        at(elements.inclination_deg).to_radians(),
-        ascending_node.to_radians(),
-        (long_perihelion - ascending_node).to_radians(),
-        mean_anomaly.to_radians(),
-    )
+    OsculatingOrbit {
+        semi_major_axis_au: at(elements.semi_major_axis_au),
+        eccentricity: at(elements.eccentricity),
+        inclination: at(elements.inclination_deg).to_radians(),
+        ascending_node: ascending_node.to_radians(),
+        arg_perihelion: (long_perihelion - ascending_node).to_radians(),
+        mean_anomaly: mean_anomaly.to_radians(),
+    }
 }
 
-fn minor_body_position_au(elements: &KeplerElements, unix_days: f64) -> [f64; 3] {
-    let mean_anomaly = (elements.mean_anomaly_at_epoch_deg
-        + elements.mean_motion_deg_per_day * (unix_days - elements.epoch_unix_days))
-        .to_radians();
-    orbital_position_au(
-        elements.semi_major_axis_au,
-        elements.eccentricity,
-        elements.inclination_deg.to_radians(),
-        elements.ascending_node_deg.to_radians(),
-        elements.arg_perihelion_deg.to_radians(),
-        mean_anomaly,
-    )
+fn minor_body_orbit(elements: &KeplerElements, unix_days: f64) -> OsculatingOrbit {
+    OsculatingOrbit {
+        semi_major_axis_au: elements.semi_major_axis_au,
+        eccentricity: elements.eccentricity,
+        inclination: elements.inclination_deg.to_radians(),
+        ascending_node: elements.ascending_node_deg.to_radians(),
+        arg_perihelion: elements.arg_perihelion_deg.to_radians(),
+        mean_anomaly: (elements.mean_anomaly_at_epoch_deg
+            + elements.mean_motion_deg_per_day * (unix_days - elements.epoch_unix_days))
+            .to_radians(),
+    }
+}
+
+/// The heliocentric ellipse `target` rides on `unix_days`: JPL mean elements
+/// for the planets, SBDB osculating elements for Ceres, Vesta and Pluto.
+/// `None` for the Sun, satellites, Voyager and unknown targets. In SPICE mode
+/// this is the analytic stand-in the orbit ring is drawn from; it stays within
+/// the tables' ~0.3 deg of the kernel positions.
+pub fn heliocentric_orbit(target: &str, unix_days: f64) -> Option<OsculatingOrbit> {
+    if let Some(elements) = minor_body_elements(target) {
+        Some(minor_body_orbit(elements, unix_days))
+    } else {
+        planet_mean_elements(target).map(|elements| planet_orbit(elements, unix_days))
+    }
 }
 
 /// Heliocentric ECLIPJ2000 position (AU) on a Keplerian ellipse with the given
@@ -568,10 +611,17 @@ impl SpiceEphemeris {
         self.position_au(target, 0.0)
     }
 
+    /// The absolute date, in days since the Unix epoch, that
+    /// `elapsed_simulation_days` from launch corresponds to. Every analytic
+    /// position, satellite phase and orbit ring is evaluated on this clock.
+    pub fn unix_days_at(&self, elapsed_simulation_days: f64) -> f64 {
+        self.start_unix_days + elapsed_simulation_days
+    }
+
     /// Non-SPICE position, on absolute dates: Voyager's trajectory, else the
     /// analytic orbits (`fallback_position_au`).
     fn analytic_position_au(&self, target: &str, elapsed_simulation_days: f64) -> [f64; 3] {
-        let unix_days = self.start_unix_days + elapsed_simulation_days;
+        let unix_days = self.unix_days_at(elapsed_simulation_days);
         if target == VOYAGER_1_TARGET {
             voyager_1_position_au(unix_days)
         } else {
@@ -818,7 +868,7 @@ const MOON_ORBIT: SatelliteOrbit = SatelliteOrbit {
 };
 
 pub const CHARON_ORBIT: SatelliteOrbit = SatelliteOrbit {
-    primary: "PLUTO",
+    primary: "PLUTO BARYCENTER",
     semi_major_axis_km: CHARON_SEMI_MAJOR_AXIS_KM,
     period_days: 6.38723,
     phase_radians: 1.1,
@@ -866,36 +916,33 @@ pub const CALLISTO_ORBIT: SatelliteOrbit = SatelliteOrbit {
     z_wobble_frequency: 0.5,
 };
 
-fn fallback_satellite_position_au(orbit: &SatelliteOrbit, unix_days: f64) -> [f64; 3] {
-    let primary = fallback_planet_position_au(orbit.primary, unix_days);
+/// A satellite's ECLIPJ2000 offset (AU) from its primary on `unix_days`: a
+/// circle in the ecliptic plane at an arbitrary but date-stable phase, plus
+/// the small out-of-plane wobble. The single placement rule for every
+/// analytic moon, whether the ephemeris adds it to the primary (the Moon) or
+/// `simulation.rs` does after the ephemeris pass (the reconstructed ones).
+pub fn satellite_offset_au(orbit: &SatelliteOrbit, unix_days: f64) -> [f64; 3] {
     let radius_au = orbit.semi_major_axis_km / KM_PER_AU;
-    let theta = std::f64::consts::TAU * unix_days / orbit.period_days + orbit.phase_radians;
+    let theta = TAU * unix_days / orbit.period_days + orbit.phase_radians;
 
     [
-        primary[0] + radius_au * theta.cos(),
-        primary[1] + radius_au * theta.sin(),
-        primary[2] + radius_au * orbit.z_wobble_factor * (theta * orbit.z_wobble_frequency).sin(),
+        radius_au * theta.cos(),
+        radius_au * theta.sin(),
+        radius_au * orbit.z_wobble_factor * (theta * orbit.z_wobble_frequency).sin(),
     ]
 }
 
+/// Analytic heliocentric position on a real date. The Moon rides
+/// `MOON_ORBIT` around the Earth-Moon barycentre; everything else is a planet
+/// or minor body on its own ellipse. The reconstructed satellites (Charon and
+/// the Galilean moons) are not placed here: `simulation.rs` rebuilds them
+/// from their primary's scene position, so they report the origin like any
+/// unknown target.
 fn fallback_position_au(target: &str, unix_days: f64) -> [f64; 3] {
     if target.eq_ignore_ascii_case("MOON") {
-        return fallback_satellite_position_au(&MOON_ORBIT, unix_days);
-    }
-    if target.eq_ignore_ascii_case("CHARON") {
-        return fallback_satellite_position_au(&CHARON_ORBIT, unix_days);
-    }
-    if target.eq_ignore_ascii_case("IO") {
-        return fallback_satellite_position_au(&IO_ORBIT, unix_days);
-    }
-    if target.eq_ignore_ascii_case("EUROPA") {
-        return fallback_satellite_position_au(&EUROPA_ORBIT, unix_days);
-    }
-    if target.eq_ignore_ascii_case("GANYMEDE") {
-        return fallback_satellite_position_au(&GANYMEDE_ORBIT, unix_days);
-    }
-    if target.eq_ignore_ascii_case("CALLISTO") {
-        return fallback_satellite_position_au(&CALLISTO_ORBIT, unix_days);
+        let earth = fallback_planet_position_au(MOON_ORBIT.primary, unix_days);
+        let offset = satellite_offset_au(&MOON_ORBIT, unix_days);
+        return std::array::from_fn(|axis| earth[axis] + offset[axis]);
     }
 
     fallback_planet_position_au(target, unix_days)
@@ -905,13 +952,7 @@ fn fallback_position_au(target: &str, unix_days: f64) -> [f64; 3] {
 /// elements for the planets, osculating elements for Ceres, Vesta and Pluto.
 /// Unknown targets sit at the origin.
 fn fallback_planet_position_au(target: &str, unix_days: f64) -> [f64; 3] {
-    if let Some(elements) = minor_body_elements(target) {
-        minor_body_position_au(elements, unix_days)
-    } else if let Some(elements) = planet_mean_elements(target) {
-        planet_position_au(elements, unix_days)
-    } else {
-        [0.0, 0.0, 0.0]
-    }
+    heliocentric_orbit(target, unix_days).map_or([0.0, 0.0, 0.0], |orbit| orbit.position_au())
 }
 
 #[cfg(feature = "spice")]
@@ -974,7 +1015,7 @@ mod tests {
         ];
         for (target, unix_days, expected, tolerance_au) in cases {
             let elements = minor_body_elements(target).unwrap();
-            let actual = minor_body_position_au(elements, unix_days);
+            let actual = minor_body_orbit(elements, unix_days).position_au();
             let error = (0..3)
                 .map(|axis| (actual[axis] - expected[axis]).powi(2))
                 .sum::<f64>()
@@ -1164,49 +1205,78 @@ $$EOE
     }
 
     #[test]
-    fn fallback_position_au_charon_xy_radius_matches_semi_major_axis() {
-        let unix_days = 133.7;
-        let charon = fallback_position_au("CHARON", unix_days);
-        let pluto = fallback_planet_position_au("PLUTO", unix_days);
-
-        let dx = charon[0] - pluto[0];
-        let dy = charon[1] - pluto[1];
-        let xy_radius = (dx * dx + dy * dy).sqrt();
-        let expected = CHARON_SEMI_MAJOR_AXIS_KM / KM_PER_AU;
-
-        assert_close(xy_radius, expected, 1e-12);
-    }
-
-    fn galilean_moon_xy_radius(moon: &str, unix_days: f64) -> f64 {
-        let moon_pos = fallback_position_au(moon, unix_days);
-        let jupiter = fallback_planet_position_au("JUPITER BARYCENTER", unix_days);
-        let dx = moon_pos[0] - jupiter[0];
-        let dy = moon_pos[1] - jupiter[1];
-        (dx * dx + dy * dy).sqrt()
+    fn satellite_offset_au_keeps_each_moon_at_its_semi_major_axis() {
+        for (orbit, unix_days) in [
+            (&CHARON_ORBIT, 133.7),
+            (&IO_ORBIT, 77.3),
+            (&EUROPA_ORBIT, 12.1),
+            (&GANYMEDE_ORBIT, 55.0),
+            (&CALLISTO_ORBIT, 200.0),
+        ] {
+            let [dx, dy, _] = satellite_offset_au(orbit, unix_days);
+            let expected = orbit.semi_major_axis_km / KM_PER_AU;
+            assert_close((dx * dx + dy * dy).sqrt(), expected, 1e-12);
+        }
     }
 
     #[test]
-    fn fallback_position_au_io_xy_radius_matches_semi_major_axis() {
-        let expected = IO_ORBIT.semi_major_axis_km / KM_PER_AU;
-        assert_close(galilean_moon_xy_radius("IO", 77.3), expected, 1e-12);
+    fn satellite_offset_au_is_prograde_about_ecliptic_north() {
+        // Phase advances counter-clockwise seen from +Z (ECLIPJ2000 north),
+        // the sense every planet orbits in; `simulation.rs` maps it to scene
+        // space with `eclipj2000_to_scene`, which preserves handedness.
+        let before = satellite_offset_au(&IO_ORBIT, 10.0);
+        let after = satellite_offset_au(&IO_ORBIT, 10.0 + IO_ORBIT.period_days / 100.0);
+        let cross_z = before[0] * after[1] - before[1] * after[0];
+        assert!(cross_z > 0.0, "phase must advance counter-clockwise");
     }
 
     #[test]
-    fn fallback_position_au_europa_xy_radius_matches_semi_major_axis() {
-        let expected = EUROPA_ORBIT.semi_major_axis_km / KM_PER_AU;
-        assert_close(galilean_moon_xy_radius("EUROPA", 12.1), expected, 1e-12);
+    fn reconstructed_satellites_are_not_placed_by_the_ephemeris() {
+        for target in ["CHARON", "IO", "EUROPA", "GANYMEDE", "CALLISTO"] {
+            assert_eq!(fallback_position_au(target, 77.3), [0.0, 0.0, 0.0]);
+        }
     }
 
     #[test]
-    fn fallback_position_au_ganymede_xy_radius_matches_semi_major_axis() {
-        let expected = GANYMEDE_ORBIT.semi_major_axis_km / KM_PER_AU;
-        assert_close(galilean_moon_xy_radius("GANYMEDE", 55.0), expected, 1e-12);
-    }
-
-    #[test]
-    fn fallback_position_au_callisto_xy_radius_matches_semi_major_axis() {
-        let expected = CALLISTO_ORBIT.semi_major_axis_km / KM_PER_AU;
-        assert_close(galilean_moon_xy_radius("CALLISTO", 200.0), expected, 1e-12);
+    fn heliocentric_orbit_passes_through_the_body_and_covers_the_sun() {
+        let unix_days = 20_734.0;
+        for target in [
+            "EARTH BARYCENTER",
+            "JUPITER BARYCENTER",
+            "PLUTO BARYCENTER",
+            "CERES",
+        ] {
+            let orbit = heliocentric_orbit(target, unix_days).unwrap();
+            assert_eq!(
+                orbit.position_au(),
+                fallback_planet_position_au(target, unix_days)
+            );
+            // Perihelion and aphelion straddle the Sun along the major axis.
+            let perihelion = orbit.position_at_mean_anomaly_au(0.0);
+            let aphelion = orbit.position_at_mean_anomaly_au(std::f64::consts::PI);
+            let r_min = perihelion.iter().map(|c| c * c).sum::<f64>().sqrt();
+            let r_max = aphelion.iter().map(|c| c * c).sum::<f64>().sqrt();
+            assert_close(
+                r_min,
+                orbit.semi_major_axis_au * (1.0 - orbit.eccentricity),
+                1e-9,
+            );
+            assert_close(
+                r_max,
+                orbit.semi_major_axis_au * (1.0 + orbit.eccentricity),
+                1e-9,
+            );
+        }
+        for target in [
+            "SUN",
+            "MOON",
+            "IO",
+            "CHARON",
+            VOYAGER_1_TARGET,
+            "NOT_A_REAL_TARGET",
+        ] {
+            assert!(heliocentric_orbit(target, unix_days).is_none(), "{target}");
+        }
     }
 
     #[test]

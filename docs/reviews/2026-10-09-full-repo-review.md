@@ -6,7 +6,7 @@ were verified against primary sources: the `de440s.bsp` comment area, and the
 rust-spice 1.0.1, bevy_mesh 0.19.1 and bevy_post_process 0.19.1 crate sources.
 The test suite was not run as part of the review.
 
-Status key: **fixed** (in the PR that added this file), **open**.
+Status key: **fixed** (item 1 in PR #91, items 2–6 in the follow-up PR that marks them so), **open**.
 
 ## Must fix
 
@@ -23,7 +23,7 @@ Status key: **fixed** (in the PR that added this file), **open**.
 
 ## Should fix
 
-2. **Body-to-layer syncs are unordered relative to the ephemeris pass.** — open
+2. **Body-to-layer syncs are unordered relative to the ephemeris pass.** — **fixed**
    The first `Update` tuple in `src/app/mod.rs` is not chained.
    `update_body_positions` is a NonSend system pinned to the main thread, while
    `sync_atmosphere_positions`, `sync_cloud_layers`, `sync_ring_positions`,
@@ -34,21 +34,21 @@ Status key: **fixed** (in the PR that added this file), **open**.
    Add `.after(simulation::update_body_positions)` to those systems, as the
    gizmo systems already do for `update_camera_transform`.
 
-3. **Shift-drag pan is undone by body tracking.** — open
+3. **Shift-drag pan is undone by body tracking.** — **fixed**
    Pan adds to the orbit target (`camera.rs`, `orbit_camera_input`), but
    `track_selected_body` lerps the target back to the body at 8/s whenever a
    body is selected, and every jump selects one. The result is a rubber-band
    pan that snaps back within a few frames. Either clear the selection on pan
    or track a pan offset relative to the body.
 
-4. **Orbit rings are flat circles of a second copy of the semi-major axes.** — open
+4. **Orbit rings are flat circles of a second copy of the semi-major axes.** — **fixed**
    `render.rs:draw_orbit_paths` draws circles of `BodySpec::semi_major_axis_au`
    in the ecliptic plane. Pluto's real orbit (e 0.25, i 17°) is up to ~10 AU off
    that ring; Ceres and Vesta sit 7–11° out of plane. The `types.rs` values also
    disagree with the elements in `ephemeris.rs` (Pluto 39.482 vs 39.589).
    Sample `orbital_position_au` over each body's own elements instead.
 
-5. **Pluto and Charon spin in the opposite sense to Charon's orbit.** — open
+5. **Pluto and Charon spin in the opposite sense to Charon's orbit.** — **fixed**
    Charon's orbit is built counter-clockwise about `PLUTO_POLE_SCENE`
    (`simulation.rs`, `satellite_scene_offset` / `charon_relative_scene_offset`),
    which is the right-hand positive pole. Pluto and Charon are given negative
@@ -60,8 +60,15 @@ Status key: **fixed** (in the PR that added this file), **open**.
    clockwise seen from ecliptic north, i.e. retrograde. With north up, surface
    features should drift left to right. If they drift right to left, drop the
    negation and Pluto's sign becomes correct as it stands.
+   Resolution: the derivation held up (Bevy's UV sphere puts the texture's
+   north at local +Z and `rotate_local_z` by a positive angle is right-handed
+   about it), so the global negation was removed, Pluto and Charon were made
+   positive about their IAU pole, and `simulation.rs` now tests both spin
+   senses and Charon's orbit sense against the real `Transform` maths. The
+   visible rotation sense of every body flipped; confirm in the app that
+   surface features drift left to right with north up.
 
-6. **Two implementations of the satellite orbits have diverged.** — open
+6. **Two implementations of the satellite orbits have diverged.** — **fixed**
    `ephemeris.rs:fallback_satellite_position_au` phases moons on Unix days,
    while `simulation.rs:satellite_scene_offset`, the one that places them, uses
    elapsed days. The ephemeris result for the five reconstructed bodies is

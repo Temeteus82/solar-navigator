@@ -2,17 +2,17 @@ use super::materials::PlanetRingMaterial;
 use super::types::{
     AU_TO_SCENE_UNITS, AtmosphereLayer, AtmosphereOf, BODIES, BodyEntity, BodyRuntime, BodyTrails,
     CLOUD_SUPERROTATION_RADIANS_PER_SECOND, CameraMode, CloudLayer, CloudOf, EphemerisResource,
-    HorizonsSyncState, KM_PER_AU, MAX_SIMULATION_RATE_MULTIPLIER, MIN_SIMULATION_RATE_MULTIPLIER,
+    HorizonsSyncState, MAX_SIMULATION_RATE_MULTIPLIER, MIN_SIMULATION_RATE_MULTIPLIER,
     OrbitCameraState, PlanetRing, RingOf, SECONDS_PER_DAY, SimulationState, WorldPosition,
 };
 use super::util::eclipj2000_to_scene;
 use crate::ephemeris::{
     CALLISTO_ORBIT, CHARON_ORBIT, EUROPA_ORBIT, GANYMEDE_ORBIT, IO_ORBIT, SatelliteOrbit,
+    satellite_offset_au,
 };
 use bevy::math::DVec3;
 use bevy::prelude::*;
 use bevy_egui::input::EguiWantsInput;
-use std::f64::consts::TAU;
 
 const CHARON_TO_PLUTO_MASS_RATIO: f64 = 0.1218;
 
@@ -62,6 +62,7 @@ pub(super) fn keyboard_controls(
         orbit_camera.mode = CameraMode::Orbit;
         orbit_camera.flight = None;
         orbit_camera.target = DVec3::ZERO;
+        orbit_camera.pan_offset = DVec3::ZERO;
         orbit_camera.distance = 188.3;
         trails.clear();
     }
@@ -95,6 +96,11 @@ pub(super) fn update_body_positions(
 
     for body_index in 0..BODIES.len() {
         let spec = BODIES[body_index];
+        // The reconstructed satellites are rebuilt from their primary below;
+        // the ephemeris has nothing to say about them.
+        if position_is_reconstructed(spec.spice_target) {
+            continue;
+        }
         let position_au = ephemeris
             .ephemeris
             .position_au(spec.spice_target, simulation_state.elapsed_simulation_days);
@@ -108,17 +114,13 @@ pub(super) fn update_body_positions(
         }
     }
 
-    apply_pluto_charon_center_positions(
-        &mut scene_positions,
-        simulation_state.elapsed_simulation_days,
-        au_to_scene_units,
-    );
-
-    apply_jupiter_moon_positions(
-        &mut scene_positions,
-        simulation_state.elapsed_simulation_days,
-        au_to_scene_units,
-    );
+    // Satellite phases run on the same absolute clock as every analytic
+    // position, so a date jump moves the moons along with their primary.
+    let unix_days = ephemeris
+        .ephemeris
+        .unix_days_at(simulation_state.elapsed_simulation_days);
+    apply_pluto_charon_center_positions(&mut scene_positions, unix_days, au_to_scene_units);
+    apply_jupiter_moon_positions(&mut scene_positions, unix_days, au_to_scene_units);
 
     for (body, mut transform, mut world_position) in &mut body_query {
         let spec = BODIES[body.index];
@@ -136,8 +138,9 @@ pub(super) fn update_body_positions(
             let spin_step =
                 spin_step_radians(spec.spin_radians_per_second, frame_simulation_seconds);
             if spin_step != 0.0 {
-                // After the mesh pre-rotation in setup, local +Z is the visual spin axis.
-                // Negating here aligns prograde texture motion with expected planet rotation.
+                // After the mesh pre-rotation in setup, local +Z is the body's
+                // `pole_direction`; a positive step is right-handed about it,
+                // the same sense the orbits run in (see `spin_step_radians`).
                 transform.rotate_local_z(spin_step);
             }
         }
@@ -152,25 +155,14 @@ fn body_index_for_target(target: &str) -> Option<usize> {
     BODIES.iter().position(|spec| spec.spice_target == target)
 }
 
-/// Computes the scene-space offset of a satellite from its primary using the
-/// eclipj2000→scene mapping (X-Z orbital plane, Y for the inclination wobble).
-fn satellite_scene_offset(
-    orbit: &SatelliteOrbit,
-    elapsed_days: f64,
-    au_to_scene_units: f64,
-) -> DVec3 {
-    let radius = (orbit.semi_major_axis_km / KM_PER_AU) * au_to_scene_units;
-    let theta = TAU * elapsed_days / orbit.period_days + orbit.phase_radians;
-    DVec3::new(
-        radius * theta.cos(),
-        radius * orbit.z_wobble_factor * (theta * orbit.z_wobble_frequency).sin(),
-        -radius * theta.sin(),
-    )
+/// Scene-space offset of a satellite from its primary on `unix_days`: the
+/// ephemeris's single satellite rule, mapped like every other position.
+fn satellite_scene_offset(orbit: &SatelliteOrbit, unix_days: f64, au_to_scene_units: f64) -> DVec3 {
+    eclipj2000_to_scene(satellite_offset_au(orbit, unix_days), au_to_scene_units)
 }
 
-fn charon_relative_scene_offset(elapsed_simulation_days: f64, au_to_scene_units: f64) -> DVec3 {
-    let analytic =
-        satellite_scene_offset(&CHARON_ORBIT, elapsed_simulation_days, au_to_scene_units);
+fn charon_relative_scene_offset(unix_days: f64, au_to_scene_units: f64) -> DVec3 {
+    let analytic = satellite_scene_offset(&CHARON_ORBIT, unix_days, au_to_scene_units);
 
     // Tilt the orbit so its normal aligns with Pluto's spin pole instead of the
     // ecliptic Y axis. Pluto and Charon are mutually tidally locked, so Charon
@@ -193,7 +185,7 @@ const JUPITER_MOON_ORBITS: [(&str, &SatelliteOrbit); 4] = [
 
 fn apply_jupiter_moon_positions(
     scene_positions: &mut [DVec3],
-    elapsed_simulation_days: f64,
+    unix_days: f64,
     au_to_scene_units: f64,
 ) {
     let Some(jupiter_index) = body_index_for_target("JUPITER BARYCENTER") else {
@@ -206,13 +198,13 @@ fn apply_jupiter_moon_positions(
             continue;
         };
         scene_positions[moon_index] =
-            jupiter_pos + satellite_scene_offset(orbit, elapsed_simulation_days, au_to_scene_units);
+            jupiter_pos + satellite_scene_offset(orbit, unix_days, au_to_scene_units);
     }
 }
 
 fn apply_pluto_charon_center_positions(
     scene_positions: &mut [DVec3],
-    elapsed_simulation_days: f64,
+    unix_days: f64,
     au_to_scene_units: f64,
 ) {
     let Some(pluto_barycenter_index) = body_index_for_target("PLUTO BARYCENTER") else {
@@ -223,8 +215,7 @@ fn apply_pluto_charon_center_positions(
     };
 
     let pluto_charon_barycenter = scene_positions[pluto_barycenter_index];
-    let charon_from_pluto =
-        charon_relative_scene_offset(elapsed_simulation_days, au_to_scene_units);
+    let charon_from_pluto = charon_relative_scene_offset(unix_days, au_to_scene_units);
     let charon_mass_fraction = CHARON_TO_PLUTO_MASS_RATIO / (1.0 + CHARON_TO_PLUTO_MASS_RATIO);
     let pluto_mass_fraction = 1.0 - charon_mass_fraction;
 
@@ -236,8 +227,15 @@ fn apply_pluto_charon_center_positions(
         pluto_charon_barycenter + charon_from_pluto * pluto_mass_fraction;
 }
 
+/// Rotation to apply about a body's local +Z (its `pole_direction`) this
+/// frame. The sign is the body's own: `BodySpec::spin_radians_per_second` is
+/// positive for right-handed rotation about the pole, which for the planets
+/// (pole = ecliptic north) is the prograde sense they orbit in, so an
+/// eastward-moving surface and a counter-clockwise orbit seen from north go
+/// together. Venus and Uranus carry negative rates; Pluto and Charon are
+/// positive about their tilted shared pole, matching Charon's orbit.
 fn spin_step_radians(spin_radians_per_second: f32, frame_seconds: f32) -> f32 {
-    -spin_radians_per_second * frame_seconds
+    spin_radians_per_second * frame_seconds
 }
 
 pub(super) fn sync_atmosphere_positions(
@@ -313,22 +311,86 @@ pub(super) fn sync_ring_material_uniforms(
 
 #[cfg(test)]
 mod tests {
+    use super::super::types::{BodySpec, KM_PER_AU};
     use super::{
         CHARON_TO_PLUTO_MASS_RATIO, apply_jupiter_moon_positions,
         apply_pluto_charon_center_positions, body_index_for_target, charon_relative_scene_offset,
         position_is_reconstructed, spin_step_radians,
     };
-    use crate::ephemeris::{CALLISTO_ORBIT, IO_ORBIT};
+    use crate::ephemeris::{CALLISTO_ORBIT, CHARON_ORBIT, IO_ORBIT};
     use bevy::math::DVec3;
+    use bevy::prelude::*;
 
     #[test]
-    fn spin_step_radians_inverts_prograde_sign() {
-        assert_eq!(spin_step_radians(0.5, 2.0), -1.0);
+    fn spin_step_radians_keeps_the_rate_sign() {
+        assert_eq!(spin_step_radians(0.5, 2.0), 1.0);
+        assert_eq!(spin_step_radians(-0.5, 2.0), -1.0);
+    }
+
+    /// Drives a body's `Transform` exactly as `setup_scene` and
+    /// `update_body_positions` do and returns a surface point before and
+    /// after one spin step.
+    fn surface_point_before_and_after_spin(spec: &BodySpec) -> (Vec3, Vec3, Vec3) {
+        let pole = Vec3::from_array(spec.pole_direction).normalize();
+        let mut transform = Transform::from_rotation(Quat::from_rotation_arc(Vec3::Z, pole));
+        // A point on the mesh's equator (Bevy's UV sphere has its poles on
+        // local +-Z and its texture's north at +Z).
+        let local = Vec3::X;
+        let before = transform.rotation * local;
+        transform.rotate_local_z(spin_step_radians(spec.spin_radians_per_second, 60.0));
+        let after = transform.rotation * local;
+        (pole, before, after)
     }
 
     #[test]
-    fn spin_step_radians_preserves_retrograde_behavior() {
-        assert_eq!(spin_step_radians(-0.5, 2.0), 1.0);
+    fn prograde_bodies_spin_right_handed_about_their_pole() {
+        // Right-handed about `pole`: the surface moves along `pole x r`, the
+        // same sense every orbit runs in (counter-clockwise seen from north).
+        for name in ["Earth", "Mars", "Jupiter", "Pluto", "Charon"] {
+            let spec = super::BODIES
+                .iter()
+                .find(|b| b.display_name == name)
+                .unwrap();
+            let (pole, before, after) = surface_point_before_and_after_spin(spec);
+            assert!(
+                (after - before).dot(pole.cross(before)) > 0.0,
+                "{name} should spin right-handed about its pole"
+            );
+        }
+    }
+
+    #[test]
+    fn retrograde_bodies_spin_left_handed_about_ecliptic_north() {
+        for name in ["Venus", "Uranus"] {
+            let spec = super::BODIES
+                .iter()
+                .find(|b| b.display_name == name)
+                .unwrap();
+            let (pole, before, after) = surface_point_before_and_after_spin(spec);
+            assert!(
+                (after - before).dot(pole.cross(before)) < 0.0,
+                "{name} should spin left-handed about ecliptic north"
+            );
+        }
+    }
+
+    #[test]
+    fn charon_orbits_in_the_same_sense_as_pluto_spins() {
+        // Tidally locked: Charon's orbital motion and Pluto's spin share a
+        // sense about the shared pole.
+        let pluto = super::BODIES
+            .iter()
+            .find(|b| b.display_name == "Pluto")
+            .unwrap();
+        let (pole, _, _) = surface_point_before_and_after_spin(pluto);
+        let before = charon_relative_scene_offset(100.0, 250.0).as_vec3();
+        let after =
+            charon_relative_scene_offset(100.0 + 0.01 * CHARON_ORBIT.period_days, 250.0).as_vec3();
+        assert!(
+            (after - before).dot(pole.cross(before)) > 0.0,
+            "Charon should orbit right-handed about Pluto's pole"
+        );
+        assert!(pluto.spin_radians_per_second > 0.0);
     }
 
     #[test]
@@ -349,7 +411,7 @@ mod tests {
         // Y is the inclination wobble; orbital radius is the X-Z magnitude.
         let offset = positions[io_index] - positions[jupiter_index];
         let xz_radius = (offset.x * offset.x + offset.z * offset.z).sqrt();
-        let expected = (IO_ORBIT.semi_major_axis_km / super::KM_PER_AU) * 250.0;
+        let expected = (IO_ORBIT.semi_major_axis_km / KM_PER_AU) * 250.0;
         assert!((xz_radius - expected).abs() < 1e-9);
     }
 
@@ -367,7 +429,7 @@ mod tests {
         // Y is the inclination wobble; orbital radius is the X-Z magnitude.
         let offset = positions[callisto_index] - positions[jupiter_index];
         let xz_radius = (offset.x * offset.x + offset.z * offset.z).sqrt();
-        let expected = (CALLISTO_ORBIT.semi_major_axis_km / super::KM_PER_AU) * 250.0;
+        let expected = (CALLISTO_ORBIT.semi_major_axis_km / KM_PER_AU) * 250.0;
         assert!((xz_radius - expected).abs() < 1e-9);
     }
 

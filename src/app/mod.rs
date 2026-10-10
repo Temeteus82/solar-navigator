@@ -83,6 +83,7 @@ pub(crate) fn run() {
             min_distance: 0.05,
             max_distance: 30_000.0,
             target: DVec3::ZERO,
+            pan_offset: DVec3::ZERO,
             flight: None,
             free_position: DVec3::ZERO,
             free_yaw: 0.0,
@@ -116,19 +117,38 @@ pub(crate) fn run() {
         .add_systems(
             Update,
             (
-                simulation::keyboard_controls,
-                simulation::advance_simulation_time,
-                camera::toggle_camera_mode,
-                camera::handle_jump_requests,
-                camera::orbit_camera_input,
-                camera::free_camera_input,
-                simulation::update_body_positions,
-                camera::track_selected_body,
-                simulation::sync_atmosphere_positions,
-                simulation::sync_cloud_layers,
-                simulation::sync_ring_positions,
-                simulation::sync_ring_material_uniforms,
-                camera::apply_camera_flight,
+                // Input that changes the clock runs before this frame's
+                // ephemeris pass, so a pause or Backspace reset shows at once.
+                (
+                    simulation::keyboard_controls,
+                    simulation::advance_simulation_time,
+                    simulation::update_body_positions,
+                )
+                    .chain(),
+                // Everything that reads `BodyRuntime::positions` waits for
+                // the ephemeris pass. `update_body_positions` is a NonSend
+                // system pinned to the main thread; without these edges a
+                // reader could run first on a worker and place an atmosphere
+                // or ring where its body was last frame — at the 100 000×
+                // speed cap that is half an Earth-halo radius behind.
+                (
+                    simulation::sync_atmosphere_positions,
+                    simulation::sync_cloud_layers,
+                    simulation::sync_ring_positions,
+                    simulation::sync_ring_material_uniforms,
+                    camera::toggle_camera_mode,
+                    camera::free_camera_input,
+                    // A jump sets the flight and clears any pan; tracking
+                    // yields to a flight, and the flight itself is last.
+                    (
+                        camera::orbit_camera_input,
+                        camera::handle_jump_requests,
+                        camera::track_selected_body,
+                        camera::apply_camera_flight,
+                    )
+                        .chain(),
+                )
+                    .after(simulation::update_body_positions),
                 setup::process_horizons_sync_requests,
                 setup::poll_horizons_sync_task,
                 setup::refresh_texture_status,
@@ -155,9 +175,11 @@ pub(crate) fn run() {
                 render::apply_lighting_preset,
                 render::scale_view_dependent_effects,
                 render::sync_visibility_toggles,
-                render::record_body_trails,
+                render::record_body_trails.after(simulation::update_body_positions),
                 render::draw_body_trails.after(camera::update_camera_transform),
-                render::draw_orbit_paths.after(camera::update_camera_transform),
+                render::draw_orbit_paths
+                    .after(camera::update_camera_transform)
+                    .after(simulation::update_body_positions),
                 render::update_window_title,
             ),
         )
