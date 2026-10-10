@@ -10,14 +10,13 @@ mod ui;
 mod util;
 
 use crate::ephemeris::{SpiceEphemeris, build_horizons_client};
-use bevy::light::PointLightShadowMap;
 use bevy::math::DVec3;
 use bevy::pbr::MaterialPlugin;
 use bevy::post_process::auto_exposure::AutoExposurePlugin;
 use bevy::prelude::*;
 use bevy::transform::TransformSystems;
 use bevy_egui::{EguiGlobalSettings, EguiPlugin, EguiPrimaryContextPass};
-use chrono::{Datelike, Utc};
+use chrono::Datelike;
 use materials::{PlanetAtmosphereMaterial, PlanetRingMaterial};
 use std::f32::consts::PI;
 use std::time::Duration;
@@ -36,6 +35,10 @@ pub(crate) fn run() {
     let status_line = ephemeris.status_line().to_string();
     let spice_enabled = ephemeris.is_spice_enabled();
     let date_picker_range = DatePickerRange::from_coverage(ephemeris.spice_coverage_unix_days());
+    // The one launch instant: the ephemeris anchors every analytic position
+    // and the SPICE epoch to it, and the panel's date label and picker start
+    // from the same value, so simulation day 0 means one date everywhere.
+    let start_utc = ephemeris.start_utc();
     eprintln!("{status_line}");
 
     let horizons_client = match build_horizons_client(Duration::from_secs(2)) {
@@ -48,7 +51,6 @@ pub(crate) fn run() {
 
     let mut app = App::new();
     app.insert_resource(ClearColor(Color::srgba(0.003, 0.005, 0.02, 1.0)))
-        .insert_resource(PointLightShadowMap { size: 2048 })
         .insert_resource(AppPaths { assets_root })
         .insert_resource(AppStatus {
             spice_enabled,
@@ -56,14 +58,11 @@ pub(crate) fn run() {
         })
         .insert_resource(HorizonsSyncState::new(BODIES.len()))
         .insert_resource(TextureStatus::default())
-        .insert_resource({
-            let now = Utc::now();
-            SimulationState {
-                picker_year: now.year(),
-                picker_month: now.month(),
-                picker_day: now.day(),
-                ..SimulationState::default()
-            }
+        .insert_resource(SimulationState {
+            picker_year: start_utc.year(),
+            picker_month: start_utc.month(),
+            picker_day: start_utc.day(),
+            ..SimulationState::default()
         })
         .insert_resource(RenderSettings::default())
         .insert_resource(BodyRuntime {
@@ -71,9 +70,7 @@ pub(crate) fn run() {
         })
         .insert_resource(BodyTrails::new(BODIES.len()))
         .insert_resource(RenderOrigin::default())
-        .insert_resource(SimulationEpoch {
-            start_utc: Utc::now(),
-        })
+        .insert_resource(SimulationEpoch { start_utc })
         .insert_resource(date_picker_range)
         .insert_resource(OrbitCameraState {
             mode: types::CameraMode::default(),

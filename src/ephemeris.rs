@@ -1,4 +1,4 @@
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use reqwest::blocking::Client;
 #[cfg(feature = "spice")]
 use spice::SpiceLock;
@@ -8,9 +8,10 @@ use std::path::Path;
 use std::sync::Mutex;
 use std::time::Duration;
 
-#[cfg(feature = "spice")]
-const SECONDS_PER_DAY: f64 = 86_400.0;
-const KM_PER_AU: f64 = 149_597_870.7;
+/// Shared with `app::types`, which re-exports both so the app and the
+/// ephemeris can never disagree on them.
+pub const SECONDS_PER_DAY: f64 = 86_400.0;
+pub const KM_PER_AU: f64 = 149_597_870.7;
 const MOON_SEMI_MAJOR_AXIS_KM: f64 = 384_400.0;
 const CHARON_SEMI_MAJOR_AXIS_KM: f64 = 19_591.0;
 #[cfg(feature = "spice")]
@@ -80,7 +81,7 @@ const VESTA_ELEMENTS: KeplerElements = KeplerElements {
     mean_motion_deg_per_day: 0.271_618_361_359_990_9,
 };
 
-// Pluto system barycentre (SBDB 134340), epoch JD 2457588.5 TDB (2016-07-31).
+// Pluto system barycentre (SBDB 134340), epoch JD 2457588.5 TDB (2016-07-19).
 // Pluto is absent from the planet tables below, and SPICE mode reads it from
 // de440s, so this only drives portable mode. Against Horizons: ~0.04 AU today,
 // but Neptune's perturbations grow it to ~1-1.6 AU (~2 deg) by 1600 and 2200.
@@ -328,7 +329,9 @@ pub fn orbital_position_au(
 }
 
 /// Newton's-method solve of Kepler's equation `M = E - e·sin(E)`.
-/// 5 iterations is more than enough for `e ≤ 0.2`.
+/// Five iterations from `E₀ = M` converge to ~1e-15 rad for every
+/// eccentricity routed through here (Pluto's 0.252 is the highest; the test
+/// covers 0.26). Orbits with `e ≥ 0.8` start from `E₀ = π` instead.
 #[inline]
 fn solve_kepler(mean_anomaly: f64, eccentricity: f64) -> f64 {
     let m = mean_anomaly.rem_euclid(TAU);
@@ -371,8 +374,12 @@ pub struct SpiceEphemeris {
     #[cfg(feature = "spice")]
     state: EphemerisState,
     status_line: String,
-    // Wall-clock time at construction (simulation day 0), in days since the
-    // Unix epoch — anchors every analytic (non-SPICE) position to a real date.
+    /// Wall-clock time at construction: simulation day 0. The one launch
+    /// instant — the SPICE epoch, every analytic position and the app's date
+    /// label (`SimulationEpoch`) derive from it.
+    start_utc: DateTime<Utc>,
+    /// `start_utc` in days since the Unix epoch, the unit the analytic
+    /// orbits are propagated in.
     start_unix_days: f64,
 }
 
@@ -385,44 +392,43 @@ impl SpiceEphemeris {
     #[cfg(not(feature = "spice"))]
     pub fn new(spice_dir: &Path) -> Self {
         let _ = spice_dir;
+        let start_utc = Utc::now();
         Self {
             status_line: "Fallback orbit mode active: app was compiled without the `spice` feature"
                 .to_string(),
-            start_unix_days: unix_days_now(),
+            start_utc,
+            start_unix_days: unix_days_of(start_utc),
         }
     }
 
     #[cfg(feature = "spice")]
     fn new_with_spice(spice_dir: &Path) -> Self {
+        let start_utc = Utc::now();
+        let start_unix_days = unix_days_of(start_utc);
         let leap_seconds = spice_dir.join("naif0012.tls");
         let planetary_ephemeris = spice_dir.join("de440s.bsp");
 
         let optional_text_pck = spice_dir.join("pck00011.tpc");
         let optional_gravity = spice_dir.join("gm_de440.tpc");
 
+        let fallback = |reason: String| Self {
+            state: EphemerisState::Fallback,
+            status_line: format!("Fallback orbit mode active: {reason}"),
+            start_utc,
+            start_unix_days,
+        };
+
         if !leap_seconds.is_file() || !planetary_ephemeris.is_file() {
-            return Self {
-                state: EphemerisState::Fallback,
-                status_line: format!(
-                    "Fallback orbit mode active: missing kernels. Expected {} and {}",
-                    leap_seconds.display(),
-                    planetary_ephemeris.display()
-                ),
-                start_unix_days: unix_days_now(),
-            };
+            return fallback(format!(
+                "missing kernels. Expected {} and {}",
+                leap_seconds.display(),
+                planetary_ephemeris.display()
+            ));
         }
 
         let lock = match SpiceLock::try_acquire() {
             Ok(lock) => lock,
-            Err(err) => {
-                return Self {
-                    state: EphemerisState::Fallback,
-                    status_line: format!(
-                        "Fallback orbit mode active: could not acquire SPICE lock ({err})"
-                    ),
-                    start_unix_days: unix_days_now(),
-                };
-            }
+            Err(err) => return fallback(format!("could not acquire SPICE lock ({err})")),
         };
 
         // CSPICE's default error action is ABORT: the first failed call (an
@@ -431,12 +437,6 @@ impl SpiceEphemeris {
         // `check()` after every call so a failure falls back to the analytic
         // orbits.
         lock.quiet();
-
-        let fallback = |reason: String| Self {
-            state: EphemerisState::Fallback,
-            status_line: format!("Fallback orbit mode active: {reason}"),
-            start_unix_days: unix_days_now(),
-        };
 
         let mut loaded_kernels = Vec::new();
         for kernel in [&leap_seconds, &planetary_ephemeris] {
@@ -459,14 +459,15 @@ impl SpiceEphemeris {
             }
         }
 
-        let utc_now = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
-        let base_et = lock.str2et(&spice_utc_timestamp_input(&utc_now));
+        // The SPICE epoch is the same instant as `start_unix_days`, to the
+        // millisecond, so kernel and analytic bodies share one clock.
+        let launch = start_utc.format("%Y-%m-%d %H:%M:%S.%3f").to_string();
+        let base_et = lock.str2et(&spice_utc_timestamp_input(&launch));
         if let Err(err) = lock.check() {
             lock.kclear();
-            return fallback(format!("could not convert the current time ({err})"));
+            return fallback(format!("could not convert the launch time ({err})"));
         }
 
-        let start_unix_days = unix_days_now();
         let coverage_et = spk_coverage_et(&lock, &planetary_ephemeris.to_string_lossy());
         let coverage_note = match coverage_et {
             Some((first, last)) => {
@@ -496,8 +497,15 @@ impl SpiceEphemeris {
                 coverage_et,
             },
             status_line,
+            start_utc,
             start_unix_days,
         }
+    }
+
+    /// Wall-clock time at construction, simulation day 0: the app's single
+    /// launch instant (see `start_utc` on the struct).
+    pub fn start_utc(&self) -> DateTime<Utc> {
+        self.start_utc
     }
 
     /// The span of dates the loaded planetary kernel covers, in days since
@@ -630,8 +638,8 @@ impl SpiceEphemeris {
     }
 }
 
-fn unix_days_now() -> f64 {
-    Utc::now().timestamp_millis() as f64 / (1_000.0 * 86_400.0)
+fn unix_days_of(utc: DateTime<Utc>) -> f64 {
+    utc.timestamp_millis() as f64 / (1_000.0 * SECONDS_PER_DAY)
 }
 
 fn voyager_1_position_au(unix_days: f64) -> [f64; 3] {
@@ -989,7 +997,9 @@ mod tests {
 
     #[test]
     fn kepler_solver_converges_for_moderate_eccentricity() {
-        for &e in &[0.05, 0.10, 0.20] {
+        // 0.26 sits just above Pluto's 0.252, the highest eccentricity any
+        // body here is propagated with.
+        for &e in &[0.05, 0.10, 0.20, 0.26] {
             for k in 0..16 {
                 let m = (k as f64) * (TAU / 16.0);
                 let solved = solve_kepler(m, e);
@@ -1319,6 +1329,47 @@ $$EOE
         assert!(et_within_coverage(Some((-10.0, 10.0)), 10.0));
         assert!(!et_within_coverage(Some((-10.0, 10.0)), 10.5));
         assert!(!et_within_coverage(Some((-10.0, 10.0)), -1e9));
+    }
+
+    /// End to end against the committed kernels: SPICE mode comes up, the
+    /// launch instant (with its fractional second) parses, the coverage
+    /// window is read, and a date outside it falls back instead of aborting.
+    #[cfg(feature = "spice")]
+    #[test]
+    fn spice_mode_loads_the_committed_kernels_and_reads_their_coverage() {
+        let spice_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/spice");
+        let ephemeris = SpiceEphemeris::new(&spice_dir);
+        assert!(ephemeris.is_spice_enabled(), "{}", ephemeris.status_line());
+
+        let unix_days = |y: i32, m: u32, d: u32| {
+            let date = chrono::NaiveDate::from_ymd_opt(y, m, d).unwrap();
+            date.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp() as f64 / SECONDS_PER_DAY
+        };
+        let (first, last) = ephemeris.spice_coverage_unix_days().expect("coverage");
+        // de440s: 1849-12-26 to 2150-01-22, TDB; UTC is about a minute off.
+        assert!(
+            (first - unix_days(1849, 12, 26)).abs() < 0.01,
+            "first {first}"
+        );
+        assert!((last - unix_days(2150, 1, 22)).abs() < 0.01, "last {last}");
+
+        let radius = |p: [f64; 3]| p.iter().map(|c| c * c).sum::<f64>().sqrt();
+        let earth_now = radius(ephemeris.position_au("EARTH", 0.0));
+        assert!((0.98..1.02).contains(&earth_now), "Earth at {earth_now} AU");
+        // 1700: outside the kernel, so the analytic orbit answers.
+        let earth_1700 = radius(ephemeris.position_au("EARTH", unix_days(1700, 1, 1) - first));
+        assert!(
+            (0.98..1.02).contains(&earth_1700),
+            "Earth at {earth_1700} AU"
+        );
+    }
+
+    #[test]
+    fn start_unix_days_is_the_launch_instant() {
+        let ephemeris = SpiceEphemeris::new(std::path::Path::new("."));
+        let expected = unix_days_of(ephemeris.start_utc());
+        assert_eq!(ephemeris.unix_days_at(0.0), expected);
+        assert_eq!(ephemeris.unix_days_at(1.5), expected + 1.5);
     }
 
     #[cfg(not(feature = "spice"))]

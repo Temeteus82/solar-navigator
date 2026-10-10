@@ -8,6 +8,7 @@ use bevy::prelude::*;
 use bevy::render::render_resource::{
     Extent3d, TextureDimension, TextureFormat, TextureViewDescriptor, TextureViewDimension,
 };
+use std::borrow::Cow;
 use std::f32::consts::PI;
 use std::path::{Path, PathBuf};
 
@@ -340,14 +341,22 @@ fn draw_star_splat(
     }
 }
 
-fn image_to_rgba8_data(image: &Image) -> Option<(u32, u32, Vec<u8>)> {
-    let converted = match image.texture_descriptor.format {
-        TextureFormat::Rgba8Unorm | TextureFormat::Rgba8UnormSrgb => image.clone(),
-        _ => image.convert(TextureFormat::Rgba8UnormSrgb)?,
-    };
-
-    let data = converted.data.clone()?;
-    Some((converted.width(), converted.height(), data))
+/// The image's pixels as tightly packed RGBA8, borrowed when they already
+/// are (the 8K backdrop is 134 MB and this runs on the main thread, so a
+/// copy was a visible startup hitch) and converted otherwise.
+fn image_to_rgba8_data(image: &Image) -> Option<(u32, u32, Cow<'_, [u8]>)> {
+    match image.texture_descriptor.format {
+        TextureFormat::Rgba8Unorm | TextureFormat::Rgba8UnormSrgb => Some((
+            image.width(),
+            image.height(),
+            Cow::Borrowed(image.data.as_deref()?),
+        )),
+        _ => {
+            let converted = image.convert(TextureFormat::Rgba8UnormSrgb)?;
+            let (width, height) = (converted.width(), converted.height());
+            Some((width, height, Cow::Owned(converted.data?)))
+        }
+    }
 }
 
 fn cubemap_face_direction(face: u32, s: f32, t: f32) -> Vec3 {
