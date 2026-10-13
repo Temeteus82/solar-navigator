@@ -10,6 +10,7 @@ mod ui;
 mod util;
 
 use crate::ephemeris::{SpiceEphemeris, build_horizons_client};
+use bevy::log::{BoxedLayer, LogPlugin, tracing_subscriber};
 use bevy::math::DVec3;
 use bevy::pbr::MaterialPlugin;
 use bevy::post_process::auto_exposure::AutoExposurePlugin;
@@ -19,12 +20,36 @@ use bevy_egui::{EguiGlobalSettings, EguiPlugin, EguiPrimaryContextPass};
 use chrono::Datelike;
 use materials::{PlanetAtmosphereMaterial, PlanetRingMaterial};
 use std::f32::consts::PI;
+use std::sync::Mutex;
 use std::time::Duration;
 use types::{
     AppPaths, AppStatus, BODIES, BodyRuntime, BodyTrails, DatePickerRange, EphemerisResource,
     HorizonsHttpClient, HorizonsSyncState, OrbitCameraState, RenderOrigin, RenderSettings,
     SimulationEpoch, SimulationState, TextureStatus,
 };
+
+/// Log file mirroring the terminal output, written to the working directory and
+/// overwritten on every run.
+const LOG_FILE_NAME: &str = "solar-navigator.log";
+
+/// `LogPlugin::custom_layer`: a second formatter that writes every event the
+/// terminal shows (same filter, no ANSI colours) to `LOG_FILE_NAME`. Panics and
+/// anything printed straight to stderr bypass it.
+fn log_file_layer(_app: &mut App) -> Option<BoxedLayer> {
+    let file = match std::fs::File::create(LOG_FILE_NAME) {
+        Ok(file) => file,
+        Err(err) => {
+            // The logger is what's being built, so stderr is all there is.
+            eprintln!("Could not create {LOG_FILE_NAME}: {err}");
+            return None;
+        }
+    };
+    Some(Box::new(
+        tracing_subscriber::fmt::layer()
+            .with_ansi(false)
+            .with_writer(Mutex::new(file)),
+    ))
+}
 
 pub(crate) fn run() {
     let assets_root = util::resolve_assets_root();
@@ -39,15 +64,9 @@ pub(crate) fn run() {
     // and the SPICE epoch to it, and the panel's date label and picker start
     // from the same value, so simulation day 0 means one date everywhere.
     let start_utc = ephemeris.start_utc();
-    eprintln!("{status_line}");
 
-    let horizons_client = match build_horizons_client(Duration::from_secs(2)) {
-        Ok(client) => Some(client),
-        Err(err) => {
-            eprintln!("Horizons HTTP client unavailable: {err}");
-            None
-        }
-    };
+    let horizons_client = build_horizons_client(Duration::from_secs(2));
+    let horizons_client_error = horizons_client.as_ref().err().cloned();
 
     let mut app = App::new();
     app.insert_resource(ClearColor(Color::srgba(0.003, 0.005, 0.02, 1.0)))
@@ -94,14 +113,29 @@ pub(crate) fn run() {
             auto_create_primary_context: false,
             ..default()
         })
-        .add_plugins(DefaultPlugins.set(AssetPlugin {
-            file_path: asset_file_path,
-            ..default()
-        }))
+        .add_plugins(
+            DefaultPlugins
+                .set(AssetPlugin {
+                    file_path: asset_file_path,
+                    ..default()
+                })
+                .set(LogPlugin {
+                    custom_layer: log_file_layer,
+                    ..default()
+                }),
+        )
         .add_plugins(MaterialPlugin::<PlanetAtmosphereMaterial>::default())
         .add_plugins(MaterialPlugin::<PlanetRingMaterial>::default())
         .add_plugins(AutoExposurePlugin)
         .add_plugins(EguiPlugin::default())
+        // These are known before the App exists, but logging only starts with
+        // `LogPlugin`, so report them from the first frame to reach the log file.
+        .add_systems(Startup, move |app_status: Res<AppStatus>| {
+            info!("{}", app_status.status_line);
+            if let Some(err) = &horizons_client_error {
+                warn!("Horizons HTTP client unavailable: {err}");
+            }
+        })
         .add_systems(
             Startup,
             (
@@ -190,7 +224,7 @@ pub(crate) fn run() {
         )
         .add_systems(Last, render::cap_frame_rate);
 
-    if let Some(client) = horizons_client {
+    if let Ok(client) = horizons_client {
         app.insert_resource(HorizonsHttpClient { client });
     }
 
