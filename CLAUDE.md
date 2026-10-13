@@ -34,10 +34,17 @@ Every platform is capped at `types.rs:MAX_FRAME_RATE` (60 fps) by
 that uncapped load the app once hard-froze a Windows/AMD system (Vulkan) while a
 browser was decoding video on the same GPU.
 
-Do not pin Windows to **DX12**: on the AMD dev machine (RX 6900 XT, driver
-26.8.1) the DX12 device is removed (`0x887A0005`) within seconds of startup,
-with either the FXC or a statically linked DXC shader compiler (tested
-2026-10-08). wgpu's default pick there is Vulkan.
+Do not pin Windows to **DX12**: on the AMD dev machine (RX 6900 XT) the DX12
+device is removed (`0x887A0005`) within seconds of startup, with either the FXC
+or a statically linked DXC shader compiler. wgpu's default pick there is Vulkan.
+A bisect on 2026-10-13 (driver 26.9.2) found the removal reason is
+`DXGI_ERROR_DEVICE_HUNG` (`0x887A0006`; wgpu never queries it, gfx-rs/wgpu#8080)
+and ruled out the driver update, Adrenalin recording, BC7 textures, indirect
+drawing, every camera post effect, shadows, the asteroid belt, the generated
+environment map and subgroup operations; the D3D12 debug layer and GPU-based
+validation report nothing. The next step would be an AMD Radeon GPU Detective
+capture. Two test launches made while a video was playing hard-froze Windows,
+so stop any video playback before launching a GPU test build.
 
 ### Quality checks (run both feature flag variants before committing)
 

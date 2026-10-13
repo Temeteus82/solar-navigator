@@ -192,7 +192,7 @@ pub(super) fn setup_scene(
             });
 
         if texture_handle.is_none() {
-            eprintln!(
+            warn!(
                 "Texture file missing for {}: no {} (or .ktx2/.dds) in {}",
                 spec.display_name,
                 spec.texture_file,
@@ -309,7 +309,7 @@ pub(super) fn setup_scene(
                     ));
                 }
                 None => {
-                    eprintln!(
+                    warn!(
                         "Cloud texture missing for {}: no {} in {}",
                         spec.display_name,
                         cloud_file,
@@ -516,9 +516,9 @@ pub(super) fn poll_horizons_sync_task(
     horizons_sync.task = None;
     apply_horizons_sync_result(&mut horizons_sync, result, time.elapsed_secs_f64());
 
-    eprintln!("{}", horizons_sync.status_line);
+    info!("{}", horizons_sync.status_line);
     for failure in &horizons_sync.failures {
-        eprintln!("Horizons sync issue: {failure}");
+        warn!("Horizons sync issue: {failure}");
     }
 }
 
@@ -700,9 +700,9 @@ pub(super) fn refresh_texture_status(
     );
 
     if new_summary != texture_status.summary || failed != texture_status.failed {
-        eprintln!("{new_summary}");
+        info!("{new_summary}");
         for line in &failed {
-            eprintln!("Texture load failed: {line}");
+            warn!("Texture load failed: {line}");
         }
     }
 
@@ -802,7 +802,7 @@ pub(super) fn set_window_icon(
         };
         match winit::window::Icon::from_rgba(small.0, small.1, small.2) {
             Ok(icon) => winit_window.set_window_icon(Some(icon)),
-            Err(err) => eprintln!("Failed to create window icon: {err}"),
+            Err(err) => warn!("Failed to create window icon: {err}"),
         }
         #[cfg(target_os = "windows")]
         {
@@ -810,7 +810,7 @@ pub(super) fn set_window_icon(
             if let Some(large) = decode_icon(ICON_PNG_LARGE) {
                 match winit::window::Icon::from_rgba(large.0, large.1, large.2) {
                     Ok(icon) => winit_window.set_taskbar_icon(Some(icon)),
-                    Err(err) => eprintln!("Failed to create taskbar icon: {err}"),
+                    Err(err) => warn!("Failed to create taskbar icon: {err}"),
                 }
             }
         }
@@ -829,7 +829,7 @@ fn decode_icon(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
             Some((rgba.into_raw(), w, h))
         }
         Err(err) => {
-            eprintln!("Failed to decode window icon: {err}");
+            warn!("Failed to decode window icon: {err}");
             None
         }
     }

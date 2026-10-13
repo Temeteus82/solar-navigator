@@ -6,6 +6,10 @@
 # the current artefacts as in-use. Local state, never committed.
 /sweep.timestamp
 
+# Run logs: solar-navigator.log (written by the app on every run, see
+# app/mod.rs:LOG_FILE_NAME) and ad-hoc captures such as dx12-debug.log.
+*.log
+
 # Body/sky textures are not stored in git — they are fetched per checkout by
 # scripts/download_textures_*.{sh,ps1} and, optionally, re-encoded into
 # platform-specific GPU block formats (BC7 on desktop, ASTC on Apple Silicon)
