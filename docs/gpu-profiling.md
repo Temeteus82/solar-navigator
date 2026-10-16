@@ -65,6 +65,18 @@ Panel with the Vulkan backend.
   it **before and after** `scripts/compress_textures.*` to quantify the texture
   VRAM reduction (the ~4× BC7/ASTC claim) against the uncompressed RGBA8 the
   JPEGs decode to.
+- **Radeon GPU Detective** (crashes: device removed / TDR): turn on **Crash
+  Analysis** in the panel, launch, let it crash, then
+  `rgd.exe --parse <dump>.rgd -o report.txt`. It names the in-flight draws, the
+  faulting shader's disassembly and the page-fault address. Traps:
+  - The panel runs Profiling *or* Crash Analysis, not both; profiling's
+    swapchain hook can mask the crash entirely.
+  - `rgd.exe` refuses paths with non-ASCII characters (e.g. a localised
+    `Työpöytä` desktop); copy the dump elsewhere first.
+  - After a captured crash the panel can keep a stale driver connection; the
+    next launch then fails to init the Radeon and wgpu silently falls back to
+    the CPU "Microsoft Basic Render Driver" (check `AdapterInfo` in the log).
+    Restart the panel and `RadeonDeveloperService.exe`.
 
 ## NVIDIA — Nsight Graphics
 
