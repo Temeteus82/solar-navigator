@@ -127,7 +127,12 @@ pub(crate) fn run() {
         .add_plugins(MaterialPlugin::<PlanetAtmosphereMaterial>::default())
         .add_plugins(MaterialPlugin::<PlanetRingMaterial>::default())
         .add_plugins(AutoExposurePlugin)
-        .add_plugins(EguiPlugin::default())
+        // Bindless egui page-faulted the GPU on DX12 (RGD capture, 2026-10-16:
+        // the sampler-array lookup in egui.wgsl's fs_main). The panel draws only a
+        // couple of textures, so bindless saves next to nothing anyway.
+        .add_plugins(EguiPlugin {
+            bindless_mode_array_size: None,
+        })
         // These are known before the App exists, but logging only starts with
         // `LogPlugin`, so report them from the first frame to reach the log file.
         .add_systems(Startup, move |app_status: Res<AppStatus>| {
