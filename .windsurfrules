@@ -9,7 +9,7 @@ Write clean, idiomatic Rust that future agents can extend with minimal context.
 - Rust 2024 edition · Bevy 0.18.1 · bevy_egui · wgpu v27
 - Optional `spice` feature: `rust-spice` wrapping NAIF CSPICE C library
 - `reqwest` for NASA JPL Horizons HTTP queries
-- Custom WGSL shader: `assets/shaders/planet_atmosphere.wgsl`
+- Custom WGSL shader: `assets/shaders/planet_atmosphere.wesl`
 
 ## Source Layout
 ```

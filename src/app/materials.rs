@@ -22,7 +22,7 @@ pub(super) struct PlanetAtmosphereMaterial {
 
 impl Material for PlanetAtmosphereMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/planet_atmosphere.wgsl".into()
+        "shaders/planet_atmosphere.wesl".into()
     }
 
     fn alpha_mode(&self) -> AlphaMode {
@@ -89,7 +89,7 @@ pub(super) struct PlanetRingMaterial {
 
 impl Material for PlanetRingMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/planet_ring.wgsl".into()
+        "shaders/planet_ring.wesl".into()
     }
 
     fn alpha_mode(&self) -> AlphaMode {

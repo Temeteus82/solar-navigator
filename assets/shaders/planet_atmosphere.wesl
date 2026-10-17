@@ -1,11 +1,11 @@
-#import bevy_pbr::forward_io::VertexOutput
-#import bevy_pbr::mesh_view_bindings::view
+import bevy_pbr::render::forward_io::VertexOutput;
+import bevy_pbr::render::mesh_view_bindings::view;
 
-@group(#{MATERIAL_BIND_GROUP}) @binding(0) var<uniform> tint: vec4<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> tint: vec4<f32>;
 // x = density, y = rim power, z = forward phase power, w = brightness
-@group(#{MATERIAL_BIND_GROUP}) @binding(1) var<uniform> params: vec4<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(1) var<uniform> params: vec4<f32>;
 // xyz = the Sun's render-space position (floating origin: not the world origin)
-@group(#{MATERIAL_BIND_GROUP}) @binding(2) var<uniform> sun_position: vec4<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(2) var<uniform> sun_position: vec4<f32>;
 
 fn safe_normalize(v: vec3<f32>) -> vec3<f32> {
     let len2 = max(dot(v, v), 1e-6);

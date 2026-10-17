@@ -203,9 +203,9 @@ textures upload correctly and to profile the render pipeline.
 
 ### Custom shaders
 
-`PlanetAtmosphereMaterial` (`materials.rs`) uses `assets/shaders/planet_atmosphere.wgsl`. It is rendered front-face-culled with additive blending and no depth write, creating a limb-glow halo. The `params` uniform encodes `(density, rim_power, forward_phase_power, brightness)`.
+`PlanetAtmosphereMaterial` (`materials.rs`) uses `assets/shaders/planet_atmosphere.wesl`. It is rendered front-face-culled with additive blending and no depth write, creating a limb-glow halo. The `params` uniform encodes `(density, rim_power, forward_phase_power, brightness)`.
 
-`PlanetRingMaterial` (`materials.rs`) uses `assets/shaders/planet_ring.wgsl` for Saturn's rings; its `planet_position` uniform is refreshed every frame (`simulation.rs:sync_ring_material_uniforms`) so the shader can cast the planet's cylindrical shadow across the ring disc.
+`PlanetRingMaterial` (`materials.rs`) uses `assets/shaders/planet_ring.wesl` for Saturn's rings; its `planet_position` uniform is refreshed every frame (`simulation.rs:sync_ring_material_uniforms`) so the shader can cast the planet's cylindrical shadow across the ring disc.
 
 ### CSPICE build wiring
 

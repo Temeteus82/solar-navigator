@@ -366,14 +366,19 @@ To verify the compressed textures actually upload as block-compressed + mipmappe
 
 ### Custom shaders
 
-`PlanetAtmosphereMaterial` (`materials.rs`) uses `assets/shaders/planet_atmosphere.wgsl`. It is rendered front-face-culled with additive blending and no depth write, creating a limb-glow halo. The `params` uniform encodes `(density, rim_power, forward_phase_power, brightness)`.
+Custom shaders are **WESL** (`.wesl`): since Bevy 0.20 a `.wgsl` file goes to wgpu raw, so
+`#import` and `#{MATERIAL_BIND_GROUP}` fail to parse and the material's pipeline silently never
+builds (one `failed to create shader module` error in the log). Write
+`import bevy_pbr::render::forward_io::VertexOutput;` and `@group(constants::MATERIAL_BIND_GROUP)`.
+
+`PlanetAtmosphereMaterial` (`materials.rs`) uses `assets/shaders/planet_atmosphere.wesl`. It is rendered front-face-culled with additive blending and no depth write, creating a limb-glow halo. The `params` uniform encodes `(density, rim_power, forward_phase_power, brightness)`.
 
 The orbit rings (`render.rs:draw_orbit_paths`) are the ellipses `ephemeris::heliocentric_orbit`
 returns for each body on the current date, so each ring passes through its body; the
 `semi_major_axis_au`/`orbital_period_days` fields in `BODIES` are display facts for the panel
 only and drive no geometry.
 
-`PlanetRingMaterial` (`materials.rs`) uses `assets/shaders/planet_ring.wgsl` for Saturn's rings. Its `planet_position` uniform is refreshed every frame by `simulation.rs:sync_ring_material_uniforms` so the shader can cast the planet's cylindrical shadow (umbra) across the ring disc.
+`PlanetRingMaterial` (`materials.rs`) uses `assets/shaders/planet_ring.wesl` for Saturn's rings. Its `planet_position` uniform is refreshed every frame by `simulation.rs:sync_ring_material_uniforms` so the shader can cast the planet's cylindrical shadow (umbra) across the ring disc.
 
 ### CSPICE build wiring
 
