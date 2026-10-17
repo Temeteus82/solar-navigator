@@ -195,7 +195,7 @@ The planet/body textures are **not stored in git** — `assets/textures/` is git
 from its `README.md`, and a fresh clone starts empty. Fetch them with
 `scripts/download_textures_solar_system_scope.*` and
 `scripts/download_textures_minor_bodies_science.*`; the generated GPU-compressed
-`.ktx2`/`.dds` files (`scripts/compress_textures.*`, BC7 on Windows/Linux, ASTC 4×4 on
+`.ktx2` files (`cargo run --release --example compress_textures --features compress_textures`, BC7 on Windows/Linux, ASTC 4×4 on
 Apple Silicon) are ignored by the same rule. The SPICE kernels under `assets/spice/` **are**
 committed; `scripts/download_spice_kernels.*` only refreshes them. Missing textures degrade
 gracefully to the body's fallback color. See `docs/gpu-profiling.md` to verify compressed

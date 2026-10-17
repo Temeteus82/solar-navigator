@@ -80,7 +80,7 @@ convert_image() {
       # ImageMagick's PNG coder picks its own colour type on write and collapses
       # single-channel sources (Ceres, the greyscale Europa/Callisto mosaics,
       # Pluto, Charon) to an 8-bit grey PNG — a different pixel format than what
-      # compress_textures.* hands the BC7/ASTC encoders. The PNG32: prefix pins
+      # the compress_textures example hands the BC7/ASTC encoders. The PNG32: prefix pins
       # 8-bit RGBA; -type TrueColor does not, because the coder re-detects
       # afterwards.
       "$RESIZER" "$src" -resize "$geometry" -colorspace sRGB "PNG32:${dest}"
@@ -150,7 +150,7 @@ CERES_URL='https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Ceres_Dawn
 # That mosaic is 26704x13080 (~2.042:1), not 2:1, so it is squared up to an
 # exact 4096x2048 rather than merely width-scaled: the equirectangular mapping
 # assumes 2:1, and 4096x2006 would leave a height that is not 4-aligned, which
-# compress_textures.sh would then shrink to 2004 and drift further. Same
+# the compress_textures example would then shrink to 2004 and drift further. Same
 # normalisation applied in PR #65.
 VESTA_GLOBAL_URL='https://dawngis.dlr.de/data/Vesta/mosaics/HAMO/truecolor/Vesta_true_color_HAMO-1-2_global.png'
 

@@ -81,34 +81,22 @@ FULL_RES=1 TARGET_WIDTH=4096 ./scripts/download_textures_minor_bodies_science.sh
 
 ## GPU texture compression (optional)
 
-After downloading, you can encode the planet/moon maps into GPU block-compressed
-KTX2 (BC7 + mipmaps). The app automatically prefers a same-stem `.ktx2` (or
-`.dds`) over the plain `.png` at load time, so this is a drop-in optimisation:
+After downloading, you can encode the planet/moon maps into GPU block-compressed,
+mipmapped KTX2. The app automatically prefers a same-stem `.ktx2` (or `.dds`)
+over the plain `.png` at load time, so this is a drop-in optimisation:
 
 ```bash
-# macOS / Linux
-./scripts/compress_textures.sh
+cargo run --release --example compress_textures --features compress_textures
 ```
 
-```powershell
-# Windows
-.\scripts\compress_textures.ps1
-```
-
-The script picks the GPU format your platform supports — **BC7 on Windows/Linux,
-ASTC 4x4 on macOS / Apple Silicon** (Metal supports ASTC, not BC7) — and with it
-the encoder it needs on PATH:
-
-| Platform | Format | Encoder |
-| --- | --- | --- |
-| Windows / Linux | BC7 | [AMD Compressonator](https://gpuopen.com/compressonator/) (`compressonatorcli`) |
-| macOS (Apple Silicon) | ASTC 4x4 | [Khronos KTX-Software](https://github.com/KhronosGroup/KTX-Software/releases) (`ktx`) |
-
-Two encoders because AMD ships no macOS build of Compressonator at all — the
-4.5.x releases are Windows and Linux only. On macOS, download
-`KTX-Software-<version>-Darwin-arm64.pkg` from the KTX-Software releases page and
-open it; `ktx` lands in `/usr/local/bin`. Note that `ktx create` reads PNG/EXR but
-not JPEG, so the script decodes each `.jpg` to a temporary PNG (via `sips`) first.
+Pass `-- --force` to re-encode files that already have a `.ktx2`. The example
+picks the GPU format your platform supports — **BC7 on Windows/Linux, ASTC 4x4
+on macOS / Apple Silicon** (Metal supports ASTC, not BC7) — and encodes in-process
+with [`ctt`](https://github.com/cwfitzgerald/ctt), the library behind Bevy 0.20's
+`CompressedImageSaver`. No external encoder is needed, but `ctt` compiles its C++
+encoders, so the `compress_textures` feature needs a C++ compiler (MSVC on
+Windows, the Xcode Command Line Tools on macOS, `g++`/`clang++` on Linux). The app
+builds themselves never enable it.
 
 Either format keeps textures block-compressed in VRAM (~4x smaller than the
 RGBA8 the source maps decode to) and the embedded mip chain removes shimmer on
@@ -116,18 +104,15 @@ small/distant bodies. The 8K Milky Way backdrop is deliberately left
 uncompressed — its pixels are read on the CPU to build the environment cubemap,
 which a compressed image can't provide.
 
-Both loaders read raw BCn with no Basis transcoder, so the portable build gains
-no native dependency. If you would rather produce `.dds` with Microsoft's
-`texconv` (`-f BC7_UNORM_SRGB -m 0`), that works too — the loader accepts either
-container.
+The loaders read raw BCn/ASTC with no Basis transcoder, so the app gains no
+native dependency. If you would rather produce `.dds` with Microsoft's `texconv`
+(`-f BC7_UNORM_SRGB -m 0`), that works too — the loader accepts either container.
 
-**macOS / Apple Silicon:** the scripts encode **ASTC** there instead of BC7,
-since Metal supports ASTC but not the desktop BC formats. ASTC files load only
-on Apple Silicon (and mobile), and BC7 only on desktop, so each platform keeps
-its own `.ktx2` set — fine here because textures are generated locally per
-machine, never shared or committed. A single asset that works everywhere would
-need Basis Universal (UASTC) transcoding, which this project avoids for its C++
-build dependency.
+ASTC files load only on Apple Silicon (and mobile), and BC7 only on desktop, so
+each platform keeps its own `.ktx2` set — fine here because textures are
+generated locally per machine, never shared or committed. A single asset that
+works everywhere would need Basis Universal (UASTC) transcoding, which this
+project avoids for its C++ build dependency.
 
 ## Attribution
 

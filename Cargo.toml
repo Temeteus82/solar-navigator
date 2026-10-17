@@ -7,6 +7,10 @@ license = "MIT"
 [features]
 default = ["spice"]
 spice = ["dep:rust-spice"]
+# Builds the `compress_textures` example (the offline BC7/ASTC encoder). `ctt`
+# compiles its C++ encoders with the system C++ compiler, so it stays out of
+# both app builds.
+compress_textures = ["dep:ctt"]
 
 [dependencies]
 bevy = { version = "0.20.0", default-features = false, features = [
@@ -37,7 +41,7 @@ bevy = { version = "0.20.0", default-features = false, features = [
     # block-compressed (BC7/BC1) mipmapped textures. `zstd_rust` is the
     # pure-Rust zstd backend (required by `ktx2`) so the portable build gains
     # no native dependency. Both loaders read raw BCn (no Basis transcoder).
-    # Encode the compressed files with scripts/compress_textures.*.
+    # Encode the compressed files with the `compress_textures` example.
     "ktx2",
     "zstd_rust",
     "dds",
@@ -68,6 +72,11 @@ reqwest = { version = "0.13.5", default-features = false, features = ["blocking"
 winit = { version = "0.30", default-features = false }
 rust-spice = { version = "1.0.1", default-features = false, features = ["download", "lock"], optional = true }
 egui-phosphor = { version = "0.14.0", default-features = false, features = ["fill"] }
+ctt = { version = "0.5", features = ["rayon"], optional = true }
+
+[[example]]
+name = "compress_textures"
+required-features = ["compress_textures"]
 
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"

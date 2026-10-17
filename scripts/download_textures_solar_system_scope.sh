@@ -42,7 +42,7 @@ fi
 
 # The upstream products are JPEG but every destination is .png, so downloads are
 # re-encoded rather than moved — a .png must never end up holding JPEG bytes.
-# PNG32:/format png pins 8-bit RGBA, the pixel format compress_textures.* feeds
+# PNG32:/format png pins 8-bit RGBA, the pixel format the compress_textures example feeds
 # the BC7/ASTC encoders.
 convert_to_png() {
   local src="$1"

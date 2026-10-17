@@ -43,7 +43,7 @@ What to verify for this project:
 - **Texture Viewer →** pick a planet base-color texture and confirm the
   **Format** is a block format (`BC7_SRGB...` on desktop, `ASTC...` on Apple
   Silicon) **with a full mip chain** — not a single-level `RGBA8` 2048×1024.
-  This is the on-GPU proof that `scripts/compress_textures.*` worked and that
+  This is the on-GPU proof that the `compress_textures` example worked and that
   the `.ktx2` was preferred over the `.jpg`.
 - **Event Browser →** Bevy labels its render passes, so you can step through the
   depth/normal prepass, SSAO, the custom **atmosphere** limb-glow (additive,
@@ -62,7 +62,7 @@ Panel with the Vulkan backend.
   post-FX stack (SSAO + prepasses + bloom + auto-exposure) and the per-frame
   cost of the ~3,000 instanced asteroids.
 - **RMV** (memory): capture a memory trace to see actual VRAM by resource. Run
-  it **before and after** `scripts/compress_textures.*` to quantify the texture
+  it **before and after** the `compress_textures` example to quantify the texture
   VRAM reduction (the ~4× BC7/ASTC claim) against the uncompressed RGBA8 the
   JPEGs decode to.
 - **Radeon GPU Detective** (crashes: device removed / TDR): turn on **Crash
