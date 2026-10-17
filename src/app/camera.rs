@@ -99,9 +99,8 @@ pub(super) fn toggle_camera_mode_impl(
             if let Some(index) = anchor {
                 let target = body_runtime.positions[index];
                 let offset = (orbit_camera.free_position - target).as_vec3();
-                let distance = offset
-                    .length()
-                    .clamp(orbit_camera.min_distance, orbit_camera.max_distance);
+                let (min_distance, max_distance) = orbit_distance_range(orbit_camera, Some(index));
+                let distance = offset.length().clamp(min_distance, max_distance);
                 let (yaw, pitch) = look_angles_from_direction(offset.normalize_or_zero());
                 orbit_camera.target = target;
                 orbit_camera.pan_offset = DVec3::ZERO;
@@ -116,6 +115,7 @@ pub(super) fn toggle_camera_mode_impl(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn orbit_camera_input(
     time: Res<Time>,
     mouse_buttons: Res<ButtonInput<MouseButton>>,
@@ -123,11 +123,14 @@ pub(super) fn orbit_camera_input(
     mouse_motion: Res<bevy::input::mouse::AccumulatedMouseMotion>,
     mut mouse_wheel_events: MessageReader<bevy::input::mouse::MouseWheel>,
     egui_input: Res<EguiWantsInput>,
+    simulation_state: Res<SimulationState>,
     mut orbit_camera: ResMut<OrbitCameraState>,
 ) {
     if orbit_camera.mode != CameraMode::Orbit {
         return;
     }
+    let (min_distance, max_distance) =
+        orbit_distance_range(&orbit_camera, simulation_state.selected_body_index);
 
     // Keyboard orbit + zoom: a pointer-free path to every mouse gesture so the
     // inspection camera is fully operable from the keyboard (WCAG 2.1.1). WASD
@@ -168,8 +171,8 @@ pub(super) fn orbit_camera_input(
         }
         if keyboard.any_pressed([KeyCode::KeyQ, KeyCode::KeyE]) {
             let zoom_factor = (1.0 + zoom_dir * ORBIT_KEY_ZOOM_RATE * dt).clamp(0.2, 5.0);
-            orbit_camera.distance = (orbit_camera.distance * zoom_factor)
-                .clamp(orbit_camera.min_distance, orbit_camera.max_distance);
+            orbit_camera.distance =
+                (orbit_camera.distance * zoom_factor).clamp(min_distance, max_distance);
             keyboard_override = true;
         }
 
@@ -224,8 +227,8 @@ pub(super) fn orbit_camera_input(
 
     if zoom_steps.abs() > 0.12 {
         let zoom_factor = (1.0 - zoom_steps * 0.12).clamp(0.2, 5.0);
-        orbit_camera.distance = (orbit_camera.distance * zoom_factor)
-            .clamp(orbit_camera.min_distance, orbit_camera.max_distance);
+        orbit_camera.distance =
+            (orbit_camera.distance * zoom_factor).clamp(min_distance, max_distance);
         user_override = true;
     }
 
@@ -400,6 +403,23 @@ pub(super) fn update_camera_transform(
 
 fn compute_target_distance_for_body(visual_radius: f32) -> f32 {
     (visual_radius * 12.0).clamp(0.25, 120.0)
+}
+
+/// How close the orbit camera may get to its target body, in multiples of the
+/// body's radius from its centre: just outside the surface, never inside it.
+pub(super) const ORBIT_MIN_RADIUS_MULTIPLE: f32 = 1.2;
+
+/// Zoom limits for an orbit around `target_index` (the selected body, if any).
+fn orbit_distance_range(
+    orbit_camera: &OrbitCameraState,
+    target_index: Option<usize>,
+) -> (f32, f32) {
+    let surface_min =
+        target_index.map_or(0.0, |i| BODIES[i].visual_radius * ORBIT_MIN_RADIUS_MULTIPLE);
+    (
+        orbit_camera.min_distance.max(surface_min),
+        orbit_camera.max_distance,
+    )
 }
 
 /// World-space position of the orbit camera from its spherical parameters.
