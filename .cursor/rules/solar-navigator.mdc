@@ -1,6 +1,6 @@
 ---
 description: Solar Navigator — AI agent coding experiment (Rust + Bevy)
-globs: ["**/*.rs", "Cargo.toml", "**/*.wgsl", "**/*.sh", "**/*.ps1"]
+globs: ["**/*.rs", "Cargo.toml", "**/*.wesl", "**/*.sh", "**/*.ps1"]
 alwaysApply: true
 ---
 

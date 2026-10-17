@@ -9,7 +9,7 @@ that future agents can extend with minimal context.
 - Rust 2024 · Bevy 0.18.1 ECS · bevy_egui · wgpu v27
 - Optional `spice` Cargo feature → `rust-spice` → NAIF CSPICE C library
 - `reqwest` for NASA JPL Horizons HTTP API
-- WGSL custom atmosphere shader at `assets/shaders/planet_atmosphere.wgsl`
+- WGSL custom atmosphere shader at `assets/shaders/planet_atmosphere.wesl`
 
 ## Module Map
 | File | Responsibility |

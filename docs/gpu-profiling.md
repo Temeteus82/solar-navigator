@@ -50,7 +50,7 @@ What to verify for this project:
   front-face-culled, no depth write) and **Saturn ring** (umbra) draws, bloom,
   and auto-exposure.
 - Select a draw to inspect bound resources, the WGSL shader, and pixel history —
-  useful when debugging `planet_atmosphere.wgsl` / `planet_ring.wgsl`.
+  useful when debugging `planet_atmosphere.wesl` / `planet_ring.wesl`.
 
 ## AMD — Radeon GPU Profiler (RGP) + Radeon Memory Visualizer (RMV)
 

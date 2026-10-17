@@ -9,8 +9,8 @@ clean, idiomatic Rust that future agents can extend with minimal context.
 - Rust 2024 edition · Bevy 0.20 ECS · bevy_egui · wgpu v30 (Metal/Vulkan/DX12)
 - `rust-spice` (optional `spice` Cargo feature) — NAIF CSPICE ephemerides
 - `reqwest` — NASA JPL Horizons HTTP queries
-- Custom WGSL shaders: atmosphere halo (`assets/shaders/planet_atmosphere.wgsl`) and
-  Saturn's ring shadow (`assets/shaders/planet_ring.wgsl`)
+- Custom WGSL shaders: atmosphere halo (`assets/shaders/planet_atmosphere.wesl`) and
+  Saturn's ring shadow (`assets/shaders/planet_ring.wesl`)
 
 ## Architecture
 ```

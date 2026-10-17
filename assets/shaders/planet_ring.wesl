@@ -1,23 +1,23 @@
-#import bevy_pbr::forward_io::VertexOutput
-#import bevy_pbr::mesh_view_bindings::view
+import bevy_pbr::render::forward_io::VertexOutput;
+import bevy_pbr::render::mesh_view_bindings::view;
 
-@group(#{MATERIAL_BIND_GROUP}) @binding(0) var<uniform> tint: vec4<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> tint: vec4<f32>;
 // x = inner_radius (scene units, informational)
 // y = outer_radius (scene units, informational)
 // z = planet_radius (scene units — drives the umbra width)
 // w = ring_brightness (overall multiplier on the lit term)
-@group(#{MATERIAL_BIND_GROUP}) @binding(1) var<uniform> params: vec4<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(1) var<uniform> params: vec4<f32>;
 // x = forward scatter strength (sun behind ring, viewer in front)
 // y = back scatter / opposition surge (sun behind viewer)
 // z = specular strength
 // w = ambient floor
-@group(#{MATERIAL_BIND_GROUP}) @binding(2) var<uniform> lighting: vec4<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(2) var<uniform> lighting: vec4<f32>;
 // xyz = parent planet heliocentric position (relative to the Sun)
-@group(#{MATERIAL_BIND_GROUP}) @binding(3) var<uniform> planet_position: vec4<f32>;
-@group(#{MATERIAL_BIND_GROUP}) @binding(4) var color_texture: texture_2d<f32>;
-@group(#{MATERIAL_BIND_GROUP}) @binding(5) var color_sampler: sampler;
+@group(constants::MATERIAL_BIND_GROUP) @binding(3) var<uniform> planet_position: vec4<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(4) var color_texture: texture_2d<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(5) var color_sampler: sampler;
 // xyz = the Sun's render-space position (floating origin: not the world origin)
-@group(#{MATERIAL_BIND_GROUP}) @binding(6) var<uniform> sun_position: vec4<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(6) var<uniform> sun_position: vec4<f32>;
 
 fn safe_normalize(v: vec3<f32>) -> vec3<f32> {
     let len2 = max(dot(v, v), 1e-6);
