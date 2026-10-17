@@ -9,7 +9,7 @@ default = ["spice"]
 spice = ["dep:rust-spice"]
 
 [dependencies]
-bevy = { version = "0.19.1", default-features = false, features = [
+bevy = { version = "0.20.0", default-features = false, features = [
     "async_executor",
     "bevy_anti_alias",
     "bevy_asset",
@@ -50,7 +50,7 @@ bevy = { version = "0.19.1", default-features = false, features = [
     "std",
     "tonemapping_luts",
 ] }
-bevy_egui = { version = "0.42.0", default-features = false, features = [
+bevy_egui = { version = "0.43.1", default-features = false, features = [
     # Build egui's AccessKit tree and bridge it to the OS accessibility layer
     # (Narrator / VoiceOver / NVDA) via bevy_winit's adapters, so screen-reader
     # users can reach the side panel's controls. DefaultPlugins already supplies

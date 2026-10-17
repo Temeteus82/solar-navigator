@@ -6,7 +6,7 @@ coding agents. The human author directs and reviews; no manual code is written. 
 clean, idiomatic Rust that future agents can extend with minimal context.
 
 ## Tech Stack
-- Rust 2024 edition · Bevy 0.19 ECS · bevy_egui · wgpu v29 (Metal/Vulkan/DX12)
+- Rust 2024 edition · Bevy 0.20 ECS · bevy_egui · wgpu v30 (Metal/Vulkan/DX12)
 - `rust-spice` (optional `spice` Cargo feature) — NAIF CSPICE ephemerides
 - `reqwest` — NASA JPL Horizons HTTP queries
 - Custom WGSL shaders: atmosphere halo (`assets/shaders/planet_atmosphere.wgsl`) and
