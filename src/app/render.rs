@@ -82,8 +82,25 @@ fn view_effect_scale(focus_distance: f32) -> f32 {
     focus_distance * FIRST_CASCADE_FOCUS_MULTIPLE / DEFAULT_FIRST_CASCADE_FAR_BOUND
 }
 
+/// Bevy's default near plane, kept for any view farther out than
+/// `DEFAULT_NEAR_PLANE / NEAR_PLANE_FOCUS_FRACTION`.
+const DEFAULT_NEAR_PLANE: f32 = 0.1;
+/// Fraction of the focus distance the near plane sits at in close-ups. The
+/// orbit camera stops at `camera::ORBIT_MIN_RADIUS_MULTIPLE` (1.2) body radii,
+/// so the surface is at least 1/6 of the focus distance away, far beyond this.
+const NEAR_PLANE_FOCUS_FRACTION: f32 = 0.01;
+
+/// Near-plane distance for a viewer `focus_distance` from their subject.
+/// Bevy's fixed 0.1 is wider than Mercury (radius 0.06), so a close zoom cut
+/// the near side off the globe; the projection is infinite reverse-Z, so a
+/// small near plane costs no depth precision worth noticing.
+fn near_plane_for_focus(focus_distance: f32) -> f32 {
+    (focus_distance * NEAR_PLANE_FOCUS_FRACTION).clamp(1e-5, DEFAULT_NEAR_PLANE)
+}
+
 /// Scales the sun's shadow cascades and depth bias, SSAO thickness and
-/// contact-shadow ray length with the camera's focus distance.
+/// contact-shadow ray length with the camera's focus distance, and pulls the
+/// near plane in for close-ups.
 ///
 /// Bevy's defaults are fixed world-unit values tuned for a ~10-unit view, but
 /// here the view spans from Voyager close-ups (~0.036 units per metre, so the
@@ -96,9 +113,17 @@ pub(super) fn scale_view_dependent_effects(
     orbit_camera: Res<OrbitCameraState>,
     body_runtime: Res<BodyRuntime>,
     mut lights: Query<(&mut DirectionalLight, &mut CascadeShadowConfig)>,
-    mut cameras: Query<(&mut ScreenSpaceAmbientOcclusion, &mut ContactShadows), With<MainCamera>>,
+    mut cameras: Query<
+        (
+            &mut ScreenSpaceAmbientOcclusion,
+            &mut ContactShadows,
+            &mut Projection,
+        ),
+        With<MainCamera>,
+    >,
 ) {
-    let scale = view_effect_scale(view_focus_distance(&orbit_camera, &body_runtime));
+    let focus_distance = view_focus_distance(&orbit_camera, &body_runtime);
+    let scale = view_effect_scale(focus_distance);
     if !scale.is_finite() || scale <= 0.0 {
         return;
     }
@@ -124,7 +149,15 @@ pub(super) fn scale_view_dependent_effects(
         }
     }
 
-    for (mut ssao, mut contact_shadows) in &mut cameras {
+    for (mut ssao, mut contact_shadows, mut projection) in &mut cameras {
+        if let Projection::Perspective(perspective) = projection.as_ref() {
+            let near = near_plane_for_focus(focus_distance);
+            if perspective.near != near
+                && let Projection::Perspective(perspective) = projection.as_mut()
+            {
+                perspective.near = near;
+            }
+        }
         let thickness = ScreenSpaceAmbientOcclusion::default().constant_object_thickness * scale;
         if ssao.constant_object_thickness != thickness {
             ssao.constant_object_thickness = thickness;
@@ -472,6 +505,28 @@ mod tests {
             DEFAULT_FIRST_CASCADE_FAR_BOUND,
             "Bevy's default first cascade bound moved; retune the reference"
         );
+    }
+
+    #[test]
+    fn near_plane_stays_in_front_of_the_closest_orbit() {
+        assert_eq!(
+            PerspectiveProjection::default().near,
+            DEFAULT_NEAR_PLANE,
+            "Bevy's default near plane moved; retune DEFAULT_NEAR_PLANE"
+        );
+        // Far views keep Bevy's default.
+        assert_eq!(near_plane_for_focus(188.3), DEFAULT_NEAR_PLANE);
+        // At the orbit camera's closest approach the surface must lie beyond
+        // the near plane, or the front of the globe is clipped away.
+        for body in BODIES {
+            let closest = body.visual_radius * super::super::camera::ORBIT_MIN_RADIUS_MULTIPLE;
+            let surface_gap = closest - body.visual_radius;
+            assert!(
+                near_plane_for_focus(closest) < surface_gap,
+                "{} would be clipped at its closest zoom",
+                body.display_name
+            );
+        }
     }
 
     #[test]
