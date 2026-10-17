@@ -58,7 +58,7 @@ function Convert-ToPng {
     $bmp = [System.Drawing.Bitmap]::FromFile($SourcePath)
     try {
         $w = $bmp.Width; $h = $bmp.Height
-        # Pin 8-bit RGBA, matching the PNG32 convention compress_textures expects.
+        # Pin 8-bit RGBA, matching the PNG32 convention the compress_textures example expects.
         $out = New-Object System.Drawing.Bitmap $w, $h, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
         try {
             # An explicit destination Rectangle is required: DrawImageUnscaled

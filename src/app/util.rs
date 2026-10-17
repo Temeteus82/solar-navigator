@@ -427,7 +427,7 @@ pub(super) fn random01(seed: &mut u64) -> f32 {
 /// variant is present on disk.
 ///
 /// This lets the renderer transparently use compressed textures when they have
-/// been generated (see `scripts/compress_textures.*`) while still working with
+/// been generated (see `examples/compress_textures.rs`) while still working with
 /// the plain `.jpg`/`.png` downloads when they have not.
 pub(super) fn resolve_texture_load_path(texture_dir: &Path, file: &str) -> Option<String> {
     if let Some(stem) = Path::new(file).file_stem().and_then(|s| s.to_str()) {

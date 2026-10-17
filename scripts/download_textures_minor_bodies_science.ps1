@@ -40,7 +40,7 @@ function Save-Resized {
         # PNG32: prefix. GDI+ otherwise carries a single-channel source (Ceres,
         # the greyscale Europa/Callisto mosaics, Pluto, Charon) straight through
         # as an indexed PNG — a different pixel format than what
-        # compress_textures.* hands the BC7/ASTC encoders.
+        # the compress_textures example hands the BC7/ASTC encoders.
         $resized = New-Object System.Drawing.Bitmap $w, $h, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
         $g = [System.Drawing.Graphics]::FromImage($resized)
         $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
@@ -101,7 +101,7 @@ $ceresUrl = 'https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Ceres_Da
 # That mosaic is 26704x13080 (~2.042:1), not 2:1, so it is squared up to an
 # exact 4096x2048 rather than merely width-scaled: the equirectangular mapping
 # assumes 2:1, and 4096x2006 would leave a height that is not 4-aligned, which
-# compress_textures would then shrink to 2004 and drift further. Same
+# the compress_textures example would then shrink to 2004 and drift further. Same
 # normalisation applied in PR #65.
 $vestaGlobalUrl ='https://dawngis.dlr.de/data/Vesta/mosaics/HAMO/truecolor/Vesta_true_color_HAMO-1-2_global.png'
 

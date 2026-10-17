@@ -73,6 +73,11 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --locked --all-targets ${{ matrix.feature_flags }} -- -D warnings
 
+      # --all-targets skips this example (it requires the opt-in feature), so
+      # lint it on its own; on macOS that also covers the ASTC branch.
+      - name: cargo clippy (compress_textures example)
+        run: cargo clippy --locked --example compress_textures --no-default-features --features compress_textures -- -D warnings
+
       - name: cargo test
         if: matrix.run_tests == 'true'
         run: cargo test --locked --all-targets ${{ matrix.feature_flags }}
