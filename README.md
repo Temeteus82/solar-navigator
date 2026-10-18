@@ -144,6 +144,10 @@ textures upload with mipmaps) and profiling GPU cost, see
 RGP/RMV, NVIDIA Nsight, and Xcode (macOS), plus how to force a capturable wgpu
 backend.
 
+For whether the asteroid belt should move to GPU compute, and why native
+CUDA/ROCm are the wrong fit next to the wgpu device Bevy already owns, see
+[`docs/gpu-compute-asteroid-belt.md`](docs/gpu-compute-asteroid-belt.md).
+
 ---
 
 ## Asset Resolution
