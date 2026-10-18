@@ -452,6 +452,7 @@ fn frame_pacing(
 
 #[cfg(test)]
 mod tests {
+    use super::super::types::drawn_size_factor;
     use super::*;
 
     #[test]
@@ -518,14 +519,17 @@ mod tests {
         assert_eq!(near_plane_for_focus(188.3), DEFAULT_NEAR_PLANE);
         // At the orbit camera's closest approach the surface must lie beyond
         // the near plane, or the front of the globe is clipped away.
-        for body in BODIES {
-            let closest = body.visual_radius * super::super::camera::ORBIT_MIN_RADIUS_MULTIPLE;
-            let surface_gap = closest - body.visual_radius;
-            assert!(
-                near_plane_for_focus(closest) < surface_gap,
-                "{} would be clipped at its closest zoom",
-                body.display_name
-            );
+        for true_scale in [false, true] {
+            for body in &BODIES {
+                let radius = body.visual_radius * drawn_size_factor(body, true_scale);
+                let closest = radius * super::super::camera::ORBIT_MIN_RADIUS_MULTIPLE;
+                let surface_gap = closest - radius;
+                assert!(
+                    near_plane_for_focus(closest) < surface_gap,
+                    "{} would be clipped at its closest zoom (true scale: {true_scale})",
+                    body.display_name
+                );
+            }
         }
     }
 

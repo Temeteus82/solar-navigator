@@ -275,6 +275,9 @@ pub(super) struct RenderSettings {
     pub(super) rings_enabled: bool,
     pub(super) orbits_enabled: bool,
     pub(super) asteroids_enabled: bool,
+    /// Draw bodies at their physical radius instead of the enlarged
+    /// `visual_radius` (see `drawn_size_factor`).
+    pub(super) true_scale: bool,
 }
 
 impl Default for RenderSettings {
@@ -286,6 +289,7 @@ impl Default for RenderSettings {
             rings_enabled: true,
             orbits_enabled: false,
             asteroids_enabled: true,
+            true_scale: false,
         }
     }
 }
@@ -949,6 +953,18 @@ pub(super) fn model_scale(spec: &BodySpec) -> f32 {
     spec.visual_radius / (spec.physical_radius_km * 1_000.0) as f32
 }
 
+/// Factor from a body's `visual_radius` (the size its meshes are built at) to
+/// the radius it is drawn at. In true scale that is its physical radius, which
+/// puts its moons at their real distance in planet radii; spacecraft keep their
+/// display size, since Voyager's 14 m is ~2e-8 scene units, far inside the
+/// smallest near plane (`render.rs:near_plane_for_focus`).
+pub(super) fn drawn_size_factor(spec: &BodySpec, true_scale: bool) -> f32 {
+    if !true_scale || spec.model_file.is_some() {
+        return 1.0;
+    }
+    (spec.physical_radius_km / KM_PER_AU * AU_TO_SCENE_UNITS) as f32 / spec.visual_radius
+}
+
 /// Rotation that stands a mesh's local +Z on the body's `pole_direction`.
 /// Bevy's UV sphere has its poles (and its texture's north) on +Z, so this
 /// orients both the body and its cloud shell; the ring disc (normal +Y) uses
@@ -971,6 +987,23 @@ mod tests {
     #[test]
     fn au_to_scene_units_is_realistic_scale() {
         assert_eq!(AU_TO_SCENE_UNITS, 250.0);
+    }
+
+    #[test]
+    fn true_scale_puts_the_moon_sixty_earth_radii_out() {
+        let earth = BODIES.iter().find(|b| b.display_name == "Earth").unwrap();
+        let earth_radius = earth.visual_radius * drawn_size_factor(earth, true);
+        let moon_distance = (384_400.0 / KM_PER_AU * AU_TO_SCENE_UNITS) as f32;
+        assert!((moon_distance / earth_radius - 60.34).abs() < 0.01);
+    }
+
+    #[test]
+    fn drawn_size_factor_is_one_unless_true_scale_applies() {
+        for body in &BODIES {
+            assert_eq!(drawn_size_factor(body, false), 1.0);
+        }
+        let voyager = BODIES.iter().find(|b| b.model_file.is_some()).unwrap();
+        assert_eq!(drawn_size_factor(voyager, true), 1.0);
     }
 
     #[test]

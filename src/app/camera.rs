@@ -2,7 +2,7 @@ use super::types::{
     BODIES, BodyRuntime, CameraFlight, CameraMode, FREE_CAMERA_BOOST_MULTIPLIER,
     FREE_CAMERA_LOOK_SENSITIVITY, FREE_CAMERA_MAX_SPEED, FREE_CAMERA_MIN_SPEED,
     FREE_CAMERA_SPEED_FACTOR, MainCamera, ORBIT_KEY_ROTATE_SPEED, ORBIT_KEY_ZOOM_RATE,
-    OrbitCameraState, RenderOrigin, SimulationState,
+    OrbitCameraState, RenderOrigin, RenderSettings, SimulationState, drawn_size_factor,
 };
 use bevy::math::DVec3;
 use bevy::prelude::*;
@@ -14,6 +14,7 @@ const MAX_PITCH: f32 = FRAC_PI_2 - 0.02;
 
 pub(super) fn handle_jump_requests(
     mut simulation_state: ResMut<SimulationState>,
+    render_settings: Res<RenderSettings>,
     body_runtime: Res<BodyRuntime>,
     mut orbit_camera: ResMut<OrbitCameraState>,
 ) {
@@ -26,7 +27,11 @@ pub(super) fn handle_jump_requests(
     orbit_camera.mode = CameraMode::Orbit;
     orbit_camera.pan_offset = DVec3::ZERO;
     simulation_state.selected_body_index = Some(target_index);
-    let target_distance = compute_target_distance_for_body(BODIES[target_index].visual_radius);
+    // Scaled with the body, so a true-scale jump frames it as large as the
+    // enlarged one would be.
+    let spec = &BODIES[target_index];
+    let target_distance = compute_target_distance_for_body(spec.visual_radius)
+        * drawn_size_factor(spec, render_settings.true_scale);
 
     if let Some(&target_position) = body_runtime.positions.get(target_index) {
         orbit_camera.target = target_position;
@@ -56,6 +61,7 @@ pub(super) fn toggle_camera_mode(
     key_input: Res<ButtonInput<KeyCode>>,
     egui_input: Res<EguiWantsInput>,
     mut simulation_state: ResMut<SimulationState>,
+    render_settings: Res<RenderSettings>,
     body_runtime: Res<BodyRuntime>,
     mut orbit_camera: ResMut<OrbitCameraState>,
 ) {
@@ -63,7 +69,12 @@ pub(super) fn toggle_camera_mode(
         return;
     }
     if key_input.just_pressed(KeyCode::KeyF) {
-        toggle_camera_mode_impl(&mut orbit_camera, &mut simulation_state, &body_runtime);
+        toggle_camera_mode_impl(
+            &mut orbit_camera,
+            &mut simulation_state,
+            &body_runtime,
+            render_settings.true_scale,
+        );
     }
 }
 
@@ -72,6 +83,7 @@ pub(super) fn toggle_camera_mode_impl(
     orbit_camera: &mut OrbitCameraState,
     simulation_state: &mut SimulationState,
     body_runtime: &BodyRuntime,
+    true_scale: bool,
 ) {
     match orbit_camera.mode {
         CameraMode::Orbit => {
@@ -99,7 +111,8 @@ pub(super) fn toggle_camera_mode_impl(
             if let Some(index) = anchor {
                 let target = body_runtime.positions[index];
                 let offset = (orbit_camera.free_position - target).as_vec3();
-                let (min_distance, max_distance) = orbit_distance_range(orbit_camera, Some(index));
+                let (min_distance, max_distance) =
+                    orbit_distance_range(orbit_camera, Some(index), true_scale);
                 let distance = offset.length().clamp(min_distance, max_distance);
                 let (yaw, pitch) = look_angles_from_direction(offset.normalize_or_zero());
                 orbit_camera.target = target;
@@ -124,13 +137,17 @@ pub(super) fn orbit_camera_input(
     mut mouse_wheel_events: MessageReader<bevy::input::mouse::MouseWheel>,
     egui_input: Res<EguiWantsInput>,
     simulation_state: Res<SimulationState>,
+    render_settings: Res<RenderSettings>,
     mut orbit_camera: ResMut<OrbitCameraState>,
 ) {
     if orbit_camera.mode != CameraMode::Orbit {
         return;
     }
-    let (min_distance, max_distance) =
-        orbit_distance_range(&orbit_camera, simulation_state.selected_body_index);
+    let (min_distance, max_distance) = orbit_distance_range(
+        &orbit_camera,
+        simulation_state.selected_body_index,
+        render_settings.true_scale,
+    );
 
     // Keyboard orbit + zoom: a pointer-free path to every mouse gesture so the
     // inspection camera is fully operable from the keyboard (WCAG 2.1.1). WASD
@@ -366,8 +383,10 @@ pub(super) fn apply_camera_flight(
     orbit_camera.target = orbit_camera.target.lerp(target_at, f64::from(at_lerp));
     orbit_camera.distance += (flight.target_distance - orbit_camera.distance) * dist_lerp;
 
+    // Relative distance tolerance: a true-scale moon's whole target distance
+    // can be under an absolute 0.05, which would end the flight far short.
     if orbit_camera.target.distance(target_at) < 0.05
-        && (orbit_camera.distance - flight.target_distance).abs() < 0.05
+        && (orbit_camera.distance - flight.target_distance).abs() < flight.target_distance * 0.05
     {
         orbit_camera.flight = None;
     }
@@ -410,16 +429,19 @@ fn compute_target_distance_for_body(visual_radius: f32) -> f32 {
 pub(super) const ORBIT_MIN_RADIUS_MULTIPLE: f32 = 1.2;
 
 /// Zoom limits for an orbit around `target_index` (the selected body, if any).
+/// A selected body sets its own floor just outside its drawn surface, so a
+/// true-scale moon (Charon's radius is ~0.001) can be approached as closely as
+/// an enlarged one; `min_distance` applies only with nothing selected.
 fn orbit_distance_range(
     orbit_camera: &OrbitCameraState,
     target_index: Option<usize>,
+    true_scale: bool,
 ) -> (f32, f32) {
-    let surface_min =
-        target_index.map_or(0.0, |i| BODIES[i].visual_radius * ORBIT_MIN_RADIUS_MULTIPLE);
-    (
-        orbit_camera.min_distance.max(surface_min),
-        orbit_camera.max_distance,
-    )
+    let min_distance = target_index.map_or(orbit_camera.min_distance, |i| {
+        let spec = &BODIES[i];
+        spec.visual_radius * drawn_size_factor(spec, true_scale) * ORBIT_MIN_RADIUS_MULTIPLE
+    });
+    (min_distance, orbit_camera.max_distance)
 }
 
 /// World-space position of the orbit camera from its spherical parameters.

@@ -298,7 +298,12 @@ The `MainCamera` carries post-processing that shapes the final image: `AutoExpos
 kept to ±2 stops, well inside Bevy's ±8 default: planet shading has no inverse-square dimming
 to compensate for, and a wider range over-brightens a frame of mostly black sky), `Bloom`, and
 SSAO (fed by depth/normal prepasses), plus `ContactShadows`. Body visual radii are ~15× their physical
-size so they read at solar-system scale without being artificially huge.
+size so they read at solar-system scale without being artificially huge. The panel's **True-scale
+bodies** toggle (`RenderSettings::true_scale`) draws them at their physical radius instead: meshes stay
+built at `visual_radius` and `simulation.rs:apply_body_scale` rescales `Transform::scale` by
+`types.rs:drawn_size_factor`. Anything sized off a body's radius (camera framing and zoom floor, the
+ring umbra) must go through that factor, not read `visual_radius` directly. Moon distances are real in
+both modes; Voyager keeps its display size.
 
 Bevy's world-unit defaults for the sun's shadow cascades and depth bias, SSAO thickness and
 contact shadows are tuned for a ~10-unit view, but views here run from Voyager close-ups

@@ -1,10 +1,11 @@
+use super::asteroids::AsteroidEntity;
 use super::materials::PlanetRingMaterial;
 use super::types::{
-    AU_TO_SCENE_UNITS, AtmosphereLayer, AtmosphereOf, BODIES, BodyEntity, BodyRuntime, BodyTrails,
-    CLOUD_SUPERROTATION_RADIANS_PER_SECOND, CameraMode, CloudLayer, CloudOf, EphemerisResource,
-    HorizonsSyncState, MAX_SIMULATION_RATE_MULTIPLIER, MIN_SIMULATION_RATE_MULTIPLIER,
-    OrbitCameraState, PlanetRing, RingOf, SECONDS_PER_DAY, SimulationState, WorldPosition,
-    pole_rotation,
+    AU_TO_SCENE_UNITS, AtmosphereLayer, AtmosphereOf, BODIES, BodyEntity, BodyRuntime, BodySpec,
+    BodyTrails, CLOUD_SUPERROTATION_RADIANS_PER_SECOND, CameraMode, CloudLayer, CloudOf,
+    EphemerisResource, HorizonsSyncState, MAX_SIMULATION_RATE_MULTIPLIER,
+    MIN_SIMULATION_RATE_MULTIPLIER, OrbitCameraState, PlanetRing, RenderSettings, RingOf,
+    SECONDS_PER_DAY, SimulationState, WorldPosition, drawn_size_factor, pole_rotation,
 };
 use super::util::eclipj2000_to_scene;
 use crate::ephemeris::{
@@ -290,6 +291,7 @@ pub(super) fn sync_ring_positions(
 /// compute the cylindrical eclipse cast by the planet onto the ring disc.
 pub(super) fn sync_ring_material_uniforms(
     body_runtime: Res<BodyRuntime>,
+    render_settings: Res<RenderSettings>,
     mut ring_materials: ResMut<Assets<PlanetRingMaterial>>,
     ring_query: Query<(&RingOf, &MeshMaterial3d<PlanetRingMaterial>), With<PlanetRing>>,
 ) {
@@ -302,6 +304,69 @@ pub(super) fn sync_ring_material_uniforms(
         };
         let p = position.as_vec3();
         material.planet_position = Vec4::new(p.x, p.y, p.z, 0.0);
+        // The umbra is as wide as the planet is drawn.
+        let spec = &BODIES[ring.index];
+        material.params.z =
+            spec.visual_radius * drawn_size_factor(spec, render_settings.true_scale);
+    }
+}
+
+/// Resizes the bodies when the true-scale toggle flips. Meshes stay built at
+/// `visual_radius` and only `Transform::scale` changes, multiplied by the ratio
+/// of new to old size factor: that leaves Voyager's model scale alone, and the
+/// atmosphere, cloud and ring entities resize with their body. Asteroids shrink
+/// with Ceres so the belt never dwarfs it. The orbit camera's distance scales
+/// with its body, which stays the same size on screen while its moons move out
+/// to their real distance in planet radii (or back in).
+#[allow(clippy::type_complexity)]
+pub(super) fn apply_body_scale(
+    render_settings: Res<RenderSettings>,
+    mut applied_true_scale: Local<bool>,
+    simulation_state: Res<SimulationState>,
+    mut orbit_camera: ResMut<OrbitCameraState>,
+    mut layers: Query<
+        (
+            &mut Transform,
+            AnyOf<(&BodyEntity, &AtmosphereOf, &CloudOf, &RingOf)>,
+        ),
+        Without<AsteroidEntity>,
+    >,
+    mut asteroids: Query<&mut Transform, With<AsteroidEntity>>,
+) {
+    let true_scale = render_settings.true_scale;
+    let previous = *applied_true_scale;
+    if true_scale == previous {
+        return;
+    }
+    *applied_true_scale = true_scale;
+    let ratio =
+        |spec: &BodySpec| drawn_size_factor(spec, true_scale) / drawn_size_factor(spec, previous);
+
+    for (mut transform, (body, atmosphere, cloud, ring)) in &mut layers {
+        let index = body
+            .map(|b| b.index)
+            .or(atmosphere.map(|a| a.index))
+            .or(cloud.map(|c| c.index))
+            .or(ring.map(|r| r.index));
+        if let Some(index) = index {
+            transform.scale *= ratio(&BODIES[index]);
+        }
+    }
+
+    if let Some(ceres) = BODIES.iter().find(|spec| spec.display_name == "Ceres") {
+        let ceres_ratio = ratio(ceres);
+        for mut transform in &mut asteroids {
+            transform.scale *= ceres_ratio;
+        }
+    }
+
+    if orbit_camera.mode == CameraMode::Orbit {
+        if let Some(index) = simulation_state.selected_body_index {
+            orbit_camera.distance *= ratio(&BODIES[index]);
+        }
+        if let Some(flight) = orbit_camera.flight.as_mut() {
+            flight.target_distance *= ratio(&BODIES[flight.target_index]);
+        }
     }
 }
 
