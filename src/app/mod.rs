@@ -177,6 +177,7 @@ pub(crate) fn run() {
                     // A jump sets the flight and clears any pan; tracking
                     // yields to a flight, and the flight itself is last.
                     (
+                        simulation::apply_body_scale,
                         camera::orbit_camera_input,
                         camera::handle_jump_requests,
                         camera::track_selected_body,
