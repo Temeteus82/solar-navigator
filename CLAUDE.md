@@ -40,8 +40,12 @@ on the AMD dev machine (RX 6900 XT, driver 26.9.2) was removed (`0x887A0005`)
 within seconds of startup. A Radeon GPU Detective capture on 2026-10-16 showed a
 GPU page fault in egui's `fs_main`, at the sampler-array lookup wgpu's DX12
 backend uses for `binding_array<sampler>`; the earlier bisect never touched the
-UI, and the D3D12 debug layer and GPU-based validation reported nothing. Do not
-re-enable bindless without a DX12 test. wgpu's default pick on Windows is still
+UI, and the D3D12 debug layer and GPU-based validation reported nothing.
+Retested on 2026-10-17 after the Bevy 0.20 upgrade (wgpu 30, bevy_egui 0.43.1,
+same driver): with bindless back on, two DX12 runs (~1 and ~2.7 min) ran clean,
+although neither crate's bindless or DX12 sampler code changed in substance, so
+the cause of the change is unknown. Bindless stays off anyway — the panel draws
+only a couple of textures. Do not re-enable it without a longer DX12 test. wgpu's default pick on Windows is still
 Vulkan; force DX12 with `WGPU_BACKEND=dx12` (see `docs/gpu-profiling.md` for the
 RGD workflow). Two test launches made while a video was playing hard-froze
 Windows, so stop any video playback before launching a GPU test build.
