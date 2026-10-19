@@ -97,6 +97,27 @@ On the Linux dev desktop, an AMD Ryzen 9 5950X (16 cores / 32 threads, up to
 past 4 threads only because the benchmark spawns OS threads every frame; Bevy's
 persistent task pool would not show that, so read the large rows.
 
+On a MacBook Pro with an Apple M5 (10 cores: 4 performance + 6 efficiency),
+on battery power, measured 2026-10-19:
+
+| Asteroids | 1 thread | 4 threads | 6 threads | 10 threads |
+| --- | --- | --- | --- | --- |
+| 3 000 (today) | 0.22 ms | 0.08 ms | 0.10 ms | 0.10 ms |
+| 100 000 | 5.6 ms | 1.53 ms | 1.45 ms | 1.13 ms |
+| 1 000 000 | 56 ms | 15.4 ms | 13.1 ms | 10.3 ms |
+| 1 500 000 (full catalogue) | 84 ms | 23 ms | 19.3 ms | 15.1 ms |
+
+The original benchmark source was not committed, so this run used a rebuilt
+copy that matches the description above: the same solver, element ranges, best
+of 20 frames, and scoped threads per frame. Three runs agreed to within a few
+percent, and `-C target-cpu=native` again changed nothing. One M5 performance
+core evaluates an asteroid in ~0.056 µs, about 2.5× faster than a 5950X core.
+Four threads fill the performance cores, and the six efficiency cores add only
+~1.5× on top of that. On all ten cores the full catalogue takes 15 ms, about
+the same as the 5950X on 16 threads. That is most of a 60 fps frame, so the
+conclusion holds on Apple Silicon too: 100 k is comfortable on the CPU, and the
+full catalogue belongs on the GPU.
+
 One 5950X core evaluates an asteroid in ~0.14 µs, against ~0.21 µs on the Xeon.
 With all 32 threads the full catalogue fits in a 60 fps frame (9.2 ms of
 16.7 ms), but only by occupying every core for most of it, which leaves Bevy's
