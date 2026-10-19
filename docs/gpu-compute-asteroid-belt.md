@@ -15,7 +15,7 @@ on every platform the app supports (Vulkan, DX12, Metal), on the AMD dev
 machine, with zero new dependencies.
 
 The arithmetic is also not the bottleneck people assume. The project's own
-Kepler solver costs about 0.2 µs per asteroid per frame on one core; the real
+Kepler solver costs 0.14–0.21 µs per asteroid per frame on one core; the real
 ceiling at scale is **one Bevy entity per asteroid**, which has to go
 regardless of where the maths runs.
 
@@ -72,8 +72,10 @@ enough (see precision below).
 
 A standalone copy of `ephemeris::orbital_position_au` and `solve_kepler`
 (five Newton iterations, f64), run over synthetic belt orbits with the same
-element ranges as `asteroids.rs`, on this session's 4-core 2.1 GHz Xeon
-container (release build, best of 20 frames):
+element ranges as `asteroids.rs` (release build, best of 20 frames, work split
+across freshly spawned scoped threads each frame).
+
+On this session's 4-core 2.1 GHz Xeon container:
 
 | Asteroids | 1 thread | 4 threads |
 | --- | --- | --- |
@@ -81,11 +83,30 @@ container (release build, best of 20 frames):
 | 100 000 | 21.8 ms | 5.8 ms |
 | 1 000 000 | 221 ms | 58.6 ms |
 
-A desktop with 8–16 faster cores lands around 15–30 ms per million, so the
-full catalogue cannot be evaluated on the CPU every frame at 60 fps, but 100 k
-can, and the current 3 000 is noise. `sin`/`cos` dominate, which is exactly
-what a GPU does cheaply: 1.5 M threads of ~40 transcendental-light flops is
-well under a millisecond on anything discrete.
+On the Linux dev desktop, an AMD Ryzen 9 5950X (16 cores / 32 threads, up to
+5.1 GHz), measured 2026-10-19:
+
+| Asteroids | 1 thread | 4 threads | 8 threads | 16 threads | 32 threads |
+| --- | --- | --- | --- | --- | --- |
+| 3 000 (today) | 0.46 ms | 0.15 ms | 0.15 ms | 0.22 ms | 0.39 ms |
+| 100 000 | 14.2 ms | 3.8 ms | 2.0 ms | 1.15 ms | 1.03 ms |
+| 1 000 000 | 134 ms | 38 ms | 19.6 ms | 10.0 ms | 7.9 ms |
+| 1 500 000 (full catalogue) | 203 ms | 57 ms | 29 ms | 15.1 ms | 9.2 ms |
+
+`-C target-cpu=native` changed nothing beyond noise. The 3 000 row gets slower
+past 4 threads only because the benchmark spawns OS threads every frame; Bevy's
+persistent task pool would not show that, so read the large rows.
+
+One 5950X core evaluates an asteroid in ~0.14 µs, against ~0.21 µs on the Xeon.
+With all 32 threads the full catalogue fits in a 60 fps frame (9.2 ms of
+16.7 ms), but only by occupying every core for most of it, which leaves Bevy's
+own systems and render preparation nothing. Going from 16 to 32 threads gains
+only ~1.6×, because SMT siblings share the floating-point units. So the full
+catalogue is not a practical per-frame CPU workload, even on a high-end desktop.
+100 k is comfortable: 1–2 ms on 8 or more threads. The current 3 000 is noise.
+`sin`/`cos` dominate, which is exactly what a GPU does cheaply: 1.5 M threads
+of ~40 transcendental-light flops is well under a millisecond on anything
+discrete.
 
 The entity overhead is the larger cost and is not in that table. Each asteroid
 today is a Bevy entity with `Transform`, `WorldPosition`, visibility and mesh
