@@ -1,6 +1,8 @@
 mod asteroids;
 mod camera;
 mod materials;
+#[cfg(feature = "raytracing")]
+mod raytracing;
 mod render;
 mod setup;
 mod simulation;
@@ -227,8 +229,20 @@ pub(crate) fn run() {
         .add_systems(
             EguiPrimaryContextPass,
             (theme::apply_theme, ui::draw_side_panel).chain(),
-        )
-        .add_systems(Last, render::cap_frame_rate);
+        );
+
+    // The raytracing experiment measures GPU cost by frame time, which the
+    // 60 fps cap would hide; `raytracing.rs` also turns vsync off for this.
+    #[cfg(feature = "raytracing")]
+    let capped = !raytracing::uncapped();
+    #[cfg(not(feature = "raytracing"))]
+    let capped = true;
+    if capped {
+        app.add_systems(Last, render::cap_frame_rate);
+    }
+
+    #[cfg(feature = "raytracing")]
+    app.add_plugins(raytracing::RaytracingPlugin);
 
     if let Ok(client) = horizons_client {
         app.insert_resource(HorizonsHttpClient { client });
