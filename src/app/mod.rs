@@ -13,8 +13,10 @@ use crate::ephemeris::{SpiceEphemeris, build_horizons_client};
 use bevy::log::{BoxedLayer, LogPlugin, tracing_subscriber};
 use bevy::math::DVec3;
 use bevy::pbr::MaterialPlugin;
+use bevy::pbr::generate::filtering_system;
 use bevy::post_process::auto_exposure::AutoExposurePlugin;
 use bevy::prelude::*;
+use bevy::render::{Render, RenderApp, RenderSystems};
 use bevy::transform::TransformSystems;
 use bevy_egui::{EguiGlobalSettings, EguiPlugin, EguiPrimaryContextPass};
 use chrono::Datelike;
@@ -23,9 +25,9 @@ use std::f32::consts::PI;
 use std::sync::Mutex;
 use std::time::Duration;
 use types::{
-    AppPaths, AppStatus, BODIES, BodyRuntime, BodyTrails, DatePickerRange, EphemerisResource,
-    HorizonsHttpClient, HorizonsSyncState, OrbitCameraState, RenderOrigin, RenderSettings,
-    SimulationEpoch, SimulationState, TextureStatus,
+    AppPaths, AppStatus, BODIES, BodyRuntime, BodyTrails, DatePickerRange, EnvironmentMapFiltered,
+    EphemerisResource, HorizonsHttpClient, HorizonsSyncState, OrbitCameraState, RenderOrigin,
+    RenderSettings, SimulationEpoch, SimulationState, TextureStatus,
 };
 
 /// Log file mirroring the terminal output, written to the working directory and
@@ -190,6 +192,7 @@ pub(crate) fn run() {
                 setup::poll_horizons_sync_task,
                 setup::refresh_texture_status,
                 setup::sync_environment_lighting_from_sky,
+                setup::freeze_filtered_environment_map,
                 asteroids::update_asteroid_positions,
                 asteroids::sync_asteroid_visibility,
                 setup::set_window_icon,
@@ -232,6 +235,21 @@ pub(crate) fn run() {
 
     if let Ok(client) = horizons_client {
         app.insert_resource(HorizonsHttpClient { client });
+    }
+
+    // The render world reports when the sky's environment map has been
+    // filtered, so the main world can stop Bevy re-filtering it every frame.
+    let environment_map_filtered = EnvironmentMapFiltered::default();
+    app.insert_resource(environment_map_filtered.clone());
+    if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
+        render_app
+            .insert_resource(environment_map_filtered)
+            .add_systems(
+                Render,
+                setup::detect_environment_map_filtered
+                    .after(filtering_system)
+                    .before(RenderSystems::Render),
+            );
     }
 
     app.run();
