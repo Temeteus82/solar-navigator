@@ -2,10 +2,10 @@ use super::materials::{PlanetAtmosphereMaterial, PlanetRingMaterial};
 use super::simulation::position_is_reconstructed;
 use super::types::{
     AppPaths, AppStatus, AtmosphereLayer, AtmosphereOf, BODIES, BodyEntity, CLOUD_LAYER_SCALE,
-    CloudLayer, CloudOf, EphemerisResource, HorizonsHttpClient, HorizonsSyncResult,
-    HorizonsSyncState, HorizonsSyncTaskInput, HorizonsTargetSample, KM_PER_AU, LightingRig,
-    MainCamera, PlanetRing, PlanetTextureEntry, PlanetTextureRegistry, RingOf, StarsBackdrop,
-    TextureStatus, WorldPosition, model_scale, pole_rotation, ring_rotation,
+    CloudLayer, CloudOf, EnvironmentMapFiltered, EphemerisResource, HorizonsHttpClient,
+    HorizonsSyncResult, HorizonsSyncState, HorizonsSyncTaskInput, HorizonsTargetSample, KM_PER_AU,
+    LightingRig, MainCamera, PlanetRing, PlanetTextureEntry, PlanetTextureRegistry, RingOf,
+    StarsBackdrop, TextureStatus, WorldPosition, model_scale, pole_rotation, ring_rotation,
 };
 use super::util::{
     color_from_rgba, eclipj2000_to_scene, equirectangular_to_cubemap_image, linear_from_rgb,
@@ -20,14 +20,16 @@ use bevy::core_pipeline::prepass::{DepthPrepass, NormalPrepass};
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::light::{GeneratedEnvironmentMapLight, NotShadowCaster};
 use bevy::math::DVec3;
+use bevy::pbr::generate::{GeneratorBindGroups, GeneratorPipelines, RenderEnvironmentMap};
 use bevy::pbr::{ContactShadows, ScreenSpaceAmbientOcclusion};
 use bevy::post_process::auto_exposure::AutoExposure;
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
-use bevy::render::render_resource::BlendState;
+use bevy::render::render_resource::{BlendState, PipelineCache};
 use bevy::tasks::{AsyncComputeTaskPool, futures_lite::future};
 use bevy_egui::PrimaryEguiContext;
 use chrono::Utc;
+use std::sync::atomic::Ordering;
 
 static ICON_PNG_SMALL: &[u8] = include_bytes!("../../assets/icon/AppIcon.iconset/icon_32x32.png");
 // Only consumed by the Windows-specific taskbar icon path in `set_window_icon`.
@@ -451,6 +453,54 @@ pub(super) fn sync_environment_lighting_from_sky(
     }
 
     sky_environment.applied_to_camera = true;
+}
+
+/// Render world: raises `EnvironmentMapFiltered` on the first frame the sky's
+/// environment map is actually filtered. The filter passes skip themselves
+/// until their compute pipelines finish compiling, and `PipelineCache` only
+/// marks pipelines ready in `RenderSystems::Render`, so running right after
+/// `filtering_system` sees exactly the readiness the filter saw.
+pub(super) fn detect_environment_map_filtered(
+    flag: Res<EnvironmentMapFiltered>,
+    pipelines: Option<Res<GeneratorPipelines>>,
+    pipeline_cache: Res<PipelineCache>,
+    maps: Query<(), (With<GeneratorBindGroups>, With<RenderEnvironmentMap>)>,
+) {
+    let Some(pipelines) = pipelines else {
+        return;
+    };
+    let ready = [
+        pipelines.copy,
+        pipelines.downsample_first,
+        pipelines.downsample_second,
+        pipelines.radiance,
+        pipelines.irradiance,
+    ]
+    .into_iter()
+    .all(|id| pipeline_cache.get_compute_pipeline(id).is_some());
+    if ready && !maps.is_empty() {
+        flag.0.store(true, Ordering::Relaxed);
+    }
+}
+
+/// Bevy re-filters a `GeneratedEnvironmentMapLight` every frame for as long as
+/// the component exists, which cost ~3.6 ms of GPU time per frame (measured
+/// 2026-10-20, RX 6900 XT) for a sky that never changes. Once the maps have
+/// been filtered, drop the component: the filtered `EnvironmentMapLight` it
+/// left on the camera keeps lighting the scene from the same GPU textures.
+pub(super) fn freeze_filtered_environment_map(
+    mut commands: Commands,
+    flag: Res<EnvironmentMapFiltered>,
+    cameras: Query<Entity, (With<MainCamera>, With<GeneratedEnvironmentMapLight>)>,
+) {
+    if !flag.0.load(Ordering::Relaxed) {
+        return;
+    }
+    for camera in &cameras {
+        commands
+            .entity(camera)
+            .remove::<GeneratedEnvironmentMapLight>();
+    }
 }
 
 pub(super) fn start_horizons_sync(

@@ -316,6 +316,16 @@ therefore rescales that whole default set uniformly with the camera's focus dist
 (`camera.rs:view_focus_distance`) every frame — set new effects up the same way rather than
 hard-coding world-unit values.
 
+The sky's image-based light is filtered once, not every frame.
+`setup.rs:sync_environment_lighting_from_sky` gives the camera a `GeneratedEnvironmentMapLight`,
+which Bevy re-filters on the GPU every frame for as long as the component exists (~3.6 ms on the
+RX 6900 XT, more than the rest of the frame). The render-world system
+`setup.rs:detect_environment_map_filtered` flags the first frame the filter actually ran (its
+pipelines compile asynchronously, so frame counting is unsafe), and
+`setup.rs:freeze_filtered_environment_map` then removes the component, leaving the filtered
+`EnvironmentMapLight` in place. Changing the sky at runtime would therefore need the component
+re-added and the flag cleared.
+
 ### Asset resolution order
 
 At runtime `util::resolve_assets_root` checks in order:

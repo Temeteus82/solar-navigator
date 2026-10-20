@@ -6,6 +6,8 @@ use chrono::{DateTime, NaiveDate, Utc};
 use reqwest::blocking::Client;
 use std::collections::VecDeque;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 pub(super) const TRAIL_MAX_POINTS: usize = 512;
 // Upper bound on rendered frames per second. Vsync alone would let a 240 Hz
@@ -475,6 +477,13 @@ pub(super) struct RingOf {
 
 #[derive(Component)]
 pub(super) struct StarsBackdrop;
+
+/// Raised by the render world once the sky's environment map has been filtered
+/// on the GPU (`setup.rs:detect_environment_map_filtered`). The flag is an `Arc`
+/// because the main and render worlds each hold a clone of the resource and
+/// cannot otherwise see each other's state.
+#[derive(Resource, Clone, Default)]
+pub(super) struct EnvironmentMapFiltered(pub(super) Arc<AtomicBool>);
 
 #[derive(Clone, Copy)]
 pub(super) struct StarPoint {
