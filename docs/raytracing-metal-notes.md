@@ -59,6 +59,26 @@ ReSTIR at runtime. Read 30 s after launch and 12 s after each key press.
   image are clean. With ReSTIR on, Earth looks clean and close to the raster image.
   Without a denoiser on macOS, ReSTIR is what makes the output usable.
 
+## Earth view after #105 (2026-10-23)
+
+Same procedure as above, on `main` at `1653b57`, which adds #105: the sky's environment
+map is filtered once and then frozen instead of re-filtered every frame. Solari samples
+that `EnvironmentMapLight` on ray misses, so it was worth checking both paths.
+
+| Lighting                | Before #105 | After #105 | Change  |
+| ----------------------- | ----------- | ---------- | ------- |
+| Solari, ReSTIR on       | 22.48 ms    | 18.36 ms   | −4.1 ms |
+| Solari, ReSTIR off      | 14.23 ms    | 10.77 ms   | −3.5 ms |
+| Deferred raster (R off) | 12.34 ms    | 11.39 ms   | −1.0 ms |
+
+- **The image is unchanged.** The Earth crops with ReSTIR on and with raster lighting
+  match the earlier ones (lighting, colour, the Moon). Metal memory is the same as
+  before: 1.72 / 1.29 / 1.33 GB.
+- **Solari gained more than raster.** 3.5–4 ms against 1 ms, so Solari without ReSTIR
+  now reads slightly below raster. The cause is not known. Each figure is a single HUD
+  reading, so differences of about a millisecond may be run-to-run variation.
+- With ReSTIR on it is still below 60 fps (48 fps).
+
 ## Not yet measured
 
 - A view where a planet fills the frame (zoomed in past the jump framing).
