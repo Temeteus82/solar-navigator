@@ -1031,6 +1031,7 @@ dependencies = [
  "bevy_render",
  "bevy_shader",
  "bevy_shape",
+ "bevy_solari",
  "bevy_state",
  "bevy_tasks",
  "bevy_time",
@@ -1454,6 +1455,38 @@ dependencies = [
  "rand_distr",
  "serde",
  "thiserror 2.0.20",
+]
+
+[[package]]
+name = "bevy_solari"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6884816ec199c45499cc33bb5a992a89662b87dffb797e54e627dbd2d9bba618"
+dependencies = [
+ "bevy_anti_alias",
+ "bevy_app",
+ "bevy_asset",
+ "bevy_camera",
+ "bevy_color",
+ "bevy_core_pipeline",
+ "bevy_derive",
+ "bevy_diagnostic",
+ "bevy_ecs",
+ "bevy_image",
+ "bevy_light",
+ "bevy_math",
+ "bevy_mesh",
+ "bevy_pbr",
+ "bevy_platform",
+ "bevy_reflect",
+ "bevy_render",
+ "bevy_shader",
+ "bevy_transform",
+ "bevy_utils",
+ "bytemuck",
+ "derive_more",
+ "tracing",
+ "wgpu",
 ]
 
 [[package]]
