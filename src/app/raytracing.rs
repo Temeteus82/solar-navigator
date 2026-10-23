@@ -13,8 +13,14 @@
 //!   (alpha-blended) and the unlit sky sphere stay out: Solari treats every
 //!   hit as opaque, so a cloud shell or the sky sphere would block all light.
 //! - While it is on, `sky_fill`'s shadow map is turned off (Solari's rays
-//!   replace it). The solar `PointLight` is ignored by Solari; the emissive
-//!   Sun sphere acts as an area light instead.
+//!   replace it). Solari 0.20 lights only from `DirectionalLight`s, emissive
+//!   meshes in the acceleration structure and the camera's environment map, so
+//!   `sky_fill` is the one light the bodies receive: the solar `PointLight` is
+//!   ignored, and the Sun sphere is left out of the acceleration structure
+//!   (below), so it lights nothing.
+//! - The camera's settings differ from Solari's defaults (`solari_settings`):
+//!   ReSTIR is on because macOS has no denoiser, and the world cache cells are
+//!   shrunk to suit this scene's scale.
 //! - `NotShadowCaster` meshes stay out of the acceleration structure too,
 //!   matching the raster path. That matters for the Sun: `sky_fill` is aimed
 //!   from the Sun at the camera's focus, so every shadow ray from the focused
@@ -29,7 +35,7 @@
 //!   while Solari is on and divides it back out when `R` turns it off.
 
 use super::render::apply_lighting_preset;
-use super::types::{LightingRig, MainCamera};
+use super::types::{BODIES, LightingRig, MainCamera, SimulationState};
 use bevy::camera::{CameraMainTextureUsages, Exposure};
 use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
 use bevy::light::NotShadowCaster;
@@ -69,6 +75,8 @@ impl Plugin for RaytracingPlugin {
                 (
                     attach_raytracing_meshes,
                     toggle_raytracing,
+                    toggle_restir,
+                    focus_body_from_env,
                     sync_emissive_scale.after(toggle_raytracing),
                     disable_shadow_maps_while_raytracing.after(apply_lighting_preset),
                 ),
@@ -105,9 +113,25 @@ fn report_adapter_support(device: Res<RenderDevice>) {
     }
 }
 
+/// Solari's defaults, tuned for this app on Metal.
+fn solari_settings() -> SolariLighting {
+    SolariLighting {
+        // Solari's only denoiser is DLSS Ray Reconstruction (NVIDIA), and with
+        // ReSTIR off by default it relies on one; without it the macOS image is
+        // raw path-traced noise. ReSTIR's sample reuse is the denoising we have.
+        restir: true,
+        // The default 0.15 is sized for metre-scale games, but Earth's visual
+        // radius is 0.16 units here, so one cell would span a whole planet.
+        // 0.005 is about half the smallest body (0.009); cells still grow with
+        // distance from the camera (`world_cache_position_lod_scale`).
+        world_cache_position_base_cell_size: 0.005,
+        ..default()
+    }
+}
+
 fn enable_on_main_camera(mut commands: Commands, camera: Single<Entity, With<MainCamera>>) {
     commands.entity(*camera).insert((
-        SolariLighting::default(),
+        solari_settings(),
         CameraMainTextureUsages::default().with(TextureUsages::STORAGE_BINDING),
     ));
 }
@@ -196,8 +220,49 @@ fn toggle_raytracing(
         commands.entity(entity).remove::<SolariLighting>();
         info!("Raytracing: off (deferred raster lighting)");
     } else {
-        commands.entity(entity).insert(SolariLighting::default());
+        commands.entity(entity).insert(solari_settings());
         info!("Raytracing: on");
+    }
+}
+
+/// `T` toggles ReSTIR, for measuring what it costs and how much noise it
+/// removes without a denoiser.
+fn toggle_restir(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut camera: Single<Option<&mut SolariLighting>, With<MainCamera>>,
+) {
+    if !keys.just_pressed(KeyCode::KeyT) {
+        return;
+    }
+    if let Some(solari) = camera.as_deref_mut() {
+        solari.restir = !solari.restir;
+        solari.reset = true;
+        info!(
+            "Raytracing: ReSTIR {}",
+            if solari.restir { "on" } else { "off" }
+        );
+    }
+}
+
+/// `SOLAR_NAVIGATOR_FOCUS=<body name>` flies to that body shortly after
+/// startup, so a measurement starts from the same close-up every run.
+fn focus_body_from_env(mut frames: Local<u32>, mut simulation_state: ResMut<SimulationState>) {
+    // Wait for the first ephemeris pass to place the bodies.
+    const FOCUS_AFTER_FRAMES: u32 = 10;
+    *frames += 1;
+    if *frames != FOCUS_AFTER_FRAMES {
+        return;
+    }
+    let Some(name) = std::env::var_os("SOLAR_NAVIGATOR_FOCUS") else {
+        return;
+    };
+    let name = name.to_string_lossy();
+    match BODIES
+        .iter()
+        .position(|spec| spec.display_name.eq_ignore_ascii_case(&name))
+    {
+        Some(index) => simulation_state.jump_request = Some(index),
+        None => warn!("Raytracing: SOLAR_NAVIGATOR_FOCUS names no body: {name}"),
     }
 }
 
