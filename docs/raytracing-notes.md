@@ -1,8 +1,9 @@
-# Solari raytracing on Metal — measurements (local experiment)
+# Solari raytracing — measurements (experimental)
 
-Branch `local/metal-raytracing-experiment`, `--features raytracing`.
+Opt-in `--features raytracing` (`src/app/raytracing.rs`), off in both app builds.
+Measured on Metal (Apple M5) and on Vulkan (AMD RX 6900 XT, Linux) below.
 
-## Setup
+## Metal: setup
 
 - Apple M5 (integrated), macOS 27.0, built-in Liquid Retina XDR display.
 - Render size 2560×1440, release build, `SOLAR_NAVIGATOR_UNCAPPED=1`.
@@ -11,7 +12,7 @@ Branch `local/metal-raytracing-experiment`, `--features raytracing`.
 - View: the startup view, i.e. the Sun from afar with no body selected, simulation
   paused. Most of the frame is sky, so this is a light case for Solari.
 
-## Results (2026-10-23)
+## Metal: startup view (2026-10-23)
 
 Measured with the Metal Performance HUD (`MTL_HUD_ENABLED=1`), read from screenshots
 after ~25 s of warm-up and 10 s after pressing R.
@@ -36,7 +37,7 @@ below 60 fps on this view.
 - `render/solari_lighting/world_cache_active_cells_count` read 0 throughout this view.
   It may just reflect a frame that is mostly sky; check it again on a planet close-up.
 
-## Earth view, with and without ReSTIR (2026-10-23)
+## Metal: Earth view, with and without ReSTIR (2026-10-23)
 
 Same setup, but started with `SOLAR_NAVIGATOR_FOCUS=Earth` (the panel's normal
 jump-to framing: Earth plus the Moon, Earth about 5 % of the frame). `T` toggles
@@ -59,7 +60,7 @@ ReSTIR at runtime. Read 30 s after launch and 12 s after each key press.
   image are clean. With ReSTIR on, Earth looks clean and close to the raster image.
   Without a denoiser on macOS, ReSTIR is what makes the output usable.
 
-## Earth view after #105 (2026-10-23)
+## Metal: Earth view after #105 (2026-10-23)
 
 Same procedure as above, on `main` at `1653b57`, which adds #105: the sky's environment
 map is filtered once and then frozen instead of re-filtered every frame. Solari samples
@@ -79,8 +80,47 @@ that `EnvironmentMapLight` on ray misses, so it was worth checking both paths.
   reading, so differences of about a millisecond may be run-to-run variation.
 - With ReSTIR on it is still below 60 fps (48 fps).
 
+## Vulkan on Linux: Earth view (2026-10-25)
+
+- AMD Radeon RX 6900 XT, RADV (Mesa 26.2.5), CachyOS, `main` at `da73674` (after #105).
+- 1280×720 window, release SPICE build, the 60 fps cap left **on**: CLAUDE.md records an
+  uncapped run hard-freezing this GPU under Windows, and Vulkan's per-pass GPU timings
+  give the cost without it.
+- `SOLAR_NAVIGATOR_FOCUS=Earth`, simulation paused, default (non-true-scale) bodies.
+  Solari settings as on Metal.
+- No key injection tool was available, so a temporary local patch picked the starting
+  mode instead of `R`/`T`. Starting without `SolariLighting` also needs the deferred,
+  depth and motion-vector prepasses that `SolariLighting` requires, which the `R`-off
+  state keeps; without them Bevy panics in `prepass/mod.rs`.
+- Timings are `RenderDiagnosticsPlugin` averages from the last 5 s report, after ~35 s.
+  The totals sum the instrumented GPU passes, without the one-off `blas_build` startup
+  spike and the environment-map filter passes, which run twice at startup and then stop
+  (#105). They are not a full frame: work outside the instrumented passes is missing.
+
+| Lighting                | Solari lighting pass | Sum of GPU passes |
+| ----------------------- | -------------------- | ----------------- |
+| Solari, ReSTIR on       | 2.70 ms              | 5.57 ms           |
+| Solari, ReSTIR off      | 1.17 ms              | 4.04 ms           |
+| Deferred raster (R off) | — (`deferred_lighting` 0.53 ms) | 3.38 ms |
+
+Other Solari passes, in both Solari modes: TLAS build 0.55 ms, world cache 0.17–0.18 ms,
+light-tile presampling 0.03 ms.
+
+- **Same picture as on Metal.** ReSTIR is most of Solari's cost (+1.5 ms here); without it
+  Earth shows scattered black dropouts, while with it the image is close to raster.
+- **The TLAS is rebuilt in raster mode too** (0.55 ms with Solari off): Solari's scene
+  plugin keeps building the acceleration structure whenever `RaytracingMesh3d`s exist,
+  whether or not a camera has `SolariLighting`.
+- **SSAO keeps running under Solari** (0.84 ms here). Solari's GI makes it redundant, so
+  skipping it while Solari is on would save that.
+- At a larger window (render area about 1580×1025, ReSTIR on) the lighting pass was
+  5.5 ms in an earlier run, consistent with the per-pixel cost seen on Metal.
+
 ## Not yet measured
 
 - A view where a planet fills the frame (zoomed in past the jump framing).
 - Lower render resolution: since cost tracks pixel count, ReSTIR at reduced
   resolution plus upscaling may be the practical setting on Apple GPUs.
+- Vulkan at 2560×1440 uncapped, for a direct comparison with the Metal tables.
+- DX12 on Windows: Solari needs binding arrays, the feature family behind the DX12
+  bindless crash recorded in CLAUDE.md.

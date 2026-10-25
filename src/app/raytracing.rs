@@ -1,9 +1,11 @@
-//! EXPERIMENTAL (local branch only): hardware-raytraced lighting via Bevy Solari.
+//! EXPERIMENTAL: hardware-raytraced lighting via Bevy Solari.
 //!
 //! Built only with `--features raytracing`. Solari needs wgpu's
 //! `EXPERIMENTAL_RAY_QUERY` plus bindless binding arrays; wgpu 30 exposes them on
-//! Metal for Apple Silicon on macOS 15+. When the adapter lacks them Solari's
-//! plugins log a warning and stay inert, and the app renders as usual.
+//! Metal for Apple Silicon on macOS 15+ and on Vulkan with RT hardware (verified
+//! on an RX 6900 XT under RADV). When the adapter lacks them Solari's plugins log
+//! a warning and stay inert, and the app renders as usual. Measurements:
+//! `docs/raytracing-notes.md`.
 //!
 //! What it changes:
 //! - The main camera gets `SolariLighting` (raytraced direct light with
