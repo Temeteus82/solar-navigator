@@ -116,11 +116,46 @@ light-tile presampling 0.03 ms.
 - At a larger window (render area about 1580×1025, ReSTIR on) the lighting pass was
   5.5 ms in an earlier run, consistent with the per-pixel cost seen on Metal.
 
+### GPU state during the runs (`amdgpu_top`, 2026-10-26)
+
+Repeated the three runs with `amdgpu_top -J -s 500` logging alongside the app (same
+setup; Bevy's timings reproduced the table above within 0.05 ms). Means over the same last
+10 s as the diagnostics report; "app" columns are our process from amdgpu_top's per-process
+(fdinfo) data.
+
+| Lighting                | Shader clock | GFX busy (GPU / app) | Power | App VRAM |
+| ----------------------- | ------------ | -------------------- | ----- | -------- |
+| Idle, no app            | ~0 MHz       | 0 % / —              | 30 W  | — (desktop: 666 MiB) |
+| Solari, ReSTIR on       | 479 MHz      | 41 % / 41 %          | 35 W  | 1508 MiB |
+| Solari, ReSTIR off      | 351 MHz      | 26 % / 31 %          | 32 W  | 1524 MiB |
+| Deferred raster (R off) | 480 MHz      | 30 % / 27 %          | 31 W  | 1606 MiB |
+
+The memory clock stayed at its 1000 MHz maximum throughout, idle included; junction
+temperature stayed at 38–39 °C.
+
+- **The timings above were measured at the lowest shader clock.** This card's shader
+  clock range is 500–2720 MHz (`pp_dpm_sclk`, power level `auto`). Under the 60 fps cap
+  the load is light enough that the driver keeps the GPU in its lowest power state
+  (about 500 MHz, briefly lower), roughly 18 % of the maximum. All three modes ran at that
+  clock, so the comparison between them holds, but the absolute milliseconds overstate
+  what the passes cost on a fully clocked GPU. Shader-bound work would shrink the most;
+  memory-bound work, already at full memory clock, would not.
+- **No ReSTIR memory jump at this size.** App VRAM was 1.5–1.6 GB in all three modes,
+  and the differences (ReSTIR on was the *lowest*) look like run-to-run variation rather
+  than a lighting-mode effect. On Metal, ReSTIR added ~0.4 GB at 2560×1440; scaled to
+  this pixel count that would be ~0.1 GB, within the spread seen here.
+- **GFX busy % is not a cost measure here.** It is busy time at whatever clock the GPU
+  picked, and the clock varied between runs (the ReSTIR-off run averaged lower, with
+  dips to 65 MHz), so busy % doesn't rank the modes consistently. Use the per-pass
+  timings for comparisons, at a fixed clock if possible.
+
 ## Not yet measured
 
 - A view where a planet fills the frame (zoomed in past the jump framing).
 - Lower render resolution: since cost tracks pixel count, ReSTIR at reduced
   resolution plus upscaling may be the practical setting on Apple GPUs.
 - Vulkan at 2560×1440 uncapped, for a direct comparison with the Metal tables.
+- Vulkan with the shader clock pinned high (`power_dpm_force_performance_level` =
+  `high`, needs root) for full-clock per-pass costs.
 - DX12 on Windows: Solari needs binding arrays, the feature family behind the DX12
   bindless crash recorded in CLAUDE.md.
