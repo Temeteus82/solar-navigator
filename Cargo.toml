@@ -11,9 +11,10 @@ spice = ["dep:rust-spice"]
 # compiles its C++ encoders with the system C++ compiler, so it stays out of
 # both app builds.
 compress_textures = ["dep:ctt"]
-# EXPERIMENTAL, local branch only: Bevy Solari hardware-raytraced lighting.
-# Needs a GPU/backend exposing wgpu EXPERIMENTAL_RAY_QUERY (Metal on Apple
-# Silicon with macOS 15+, Vulkan/DX12 RT hardware). Toggle at runtime with R.
+# EXPERIMENTAL, opt-in: Bevy Solari hardware-raytraced lighting (off in both
+# app builds). Needs a GPU/backend exposing wgpu EXPERIMENTAL_RAY_QUERY (Metal
+# on Apple Silicon with macOS 15+, Vulkan on RT hardware; measured in
+# docs/raytracing-notes.md). Toggle at runtime with R.
 raytracing = ["bevy/bevy_solari"]
 
 [dependencies]
