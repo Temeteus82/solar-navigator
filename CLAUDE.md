@@ -301,11 +301,13 @@ bloom near the Sun. A low ambient (0.25) lifts the night side.
 The `MainCamera` carries post-processing that shapes the final image: `AutoExposure` (range
 kept to ±2 stops, well inside Bevy's ±8 default: planet shading has no inverse-square dimming
 to compensate for, and a wider range over-brightens a frame of mostly black sky), `Bloom`, and
-SSAO (fed by depth/normal prepasses), plus `ContactShadows`. Body visual radii are ~15× their physical
-size so they read at solar-system scale without being artificially huge. The panel's **True-scale
-bodies** toggle (`RenderSettings::true_scale`) draws them at their physical radius instead: meshes stay
-built at `visual_radius` and `simulation.rs:apply_body_scale` rescales `Transform::scale` by
-`types.rs:drawn_size_factor`. Anything sized off a body's radius (camera framing and zoom floor, the
+SSAO (fed by depth/normal prepasses), plus `ContactShadows`. Bodies are drawn at their physical
+radius by default: the panel's **True-scale bodies** toggle (`RenderSettings::true_scale`) starts on.
+Turning it off draws them at `visual_radius`, ~15× their physical size, so they read at
+solar-system scale. Meshes are always built at `visual_radius`, and `simulation.rs:apply_body_scale`
+rescales `Transform::scale` by `types.rs:drawn_size_factor`; its "last applied" state starts at
+`false`, so the true-scale default is applied on the first `Update`. That covers only entities
+spawned in `Startup`, so anything spawned later with a body-sized mesh must apply the factor itself. Anything sized off a body's radius (camera framing and zoom floor, the
 ring umbra) must go through that factor, not read `visual_radius` directly. Moon distances are real in
 both modes; Voyager keeps its display size.
 

@@ -291,7 +291,7 @@ impl Default for RenderSettings {
             rings_enabled: true,
             orbits_enabled: false,
             asteroids_enabled: true,
-            true_scale: false,
+            true_scale: true,
         }
     }
 }
