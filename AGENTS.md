@@ -141,7 +141,9 @@ The `spice` Cargo feature (on by default) gates all CSPICE integration with `#[c
 
 ### BODIES array and BodySpec
 
-`types.rs:BODIES` is the canonical static array of all 18 rendered solar-system bodies. Every body's display name, SPICE target string, visual radius, texture filename, PBR parameters, spin rate, and atmosphere config live here. Body index is the stable identifier used everywhere (queries, positions vec, camera targeting).
+`types.rs:BODIES` is the canonical static array of all 19 rendered bodies (18 natural bodies plus the Voyager 1 probe). Every body's display name, SPICE target string, visual radius, texture filename, PBR parameters, rotation, and atmosphere config live here. Body index is the stable identifier used everywhere (queries, positions vec, camera targeting).
+
+Globes are oriented from the absolute date by `simulation.rs:body_rotation`, from each body's IAU pole (`pole_ra_dec_deg`), `SpinModel` (`Iau` values from `assets/spice/pck00011.tpc`, `EarthRotationAngle`, or `LockedTo` a primary) and `MapLayout`. Published maps differ in centre longitude and orientation, so check each new map; see `assets/textures/README.md`.
 
 ### Coordinate remapping
 
@@ -215,5 +217,5 @@ textures upload correctly and to profile the render pipeline.
 
 - All internal `app/` types are `pub(super)` — nothing leaks out of the `app` module.
 - Bevy resources are defined in `types.rs`; systems live in the module that owns them.
-- Adding a new solar-system body requires only a new `BodySpec` entry in `BODIES` and, for SPICE, a mapping in `ephemeris.rs:horizons_command_for_target` and `spice_supports_target`.
+- Adding a new solar-system body requires only a new `BodySpec` entry in `BODIES` (take its pole and `W` from `pck00011.tpc`, and check the map's layout) and, for SPICE, a mapping in `ephemeris.rs:horizons_command_for_target` and `spice_supports_target`.
 - Both feature flag variants (`--features spice` and `--no-default-features`) must pass `cargo check`, `clippy -D warnings`, and `cargo test` cleanly — CI enforces this on every push.

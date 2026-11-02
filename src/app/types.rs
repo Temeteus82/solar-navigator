@@ -1,3 +1,4 @@
+use super::util::eclipj2000_to_scene;
 use crate::ephemeris::SpiceEphemeris;
 use bevy::math::DVec3;
 use bevy::prelude::*;
@@ -40,7 +41,7 @@ pub(super) const ORBIT_KEY_ROTATE_SPEED: f32 = 1.2; // radians/s of yaw or pitch
 pub(super) const ORBIT_KEY_ZOOM_RATE: f32 = 1.5; // exponential zoom rate per second while Q/E is held
 
 /// A ring system, laid in the body's equatorial plane: the disc's normal is
-/// the body's `pole_direction`, so the rings and the planet's spin axis can
+/// the body's IAU pole, so the rings and the planet's spin axis can
 /// never disagree.
 #[derive(Clone, Copy)]
 pub(super) struct RingSpec {
@@ -97,13 +98,8 @@ pub(super) struct BodySpec {
     // are ignored. The model is authored in metres and scaled so that
     // `physical_radius_km` (its bounding radius) maps to `visual_radius`.
     pub(super) model_file: Option<&'static str>,
-    // Signed sidereal spin rate in radians per simulated second, right-handed
-    // about `pole_direction`: positive spins the surface counter-clockwise
-    // seen from the pole tip. With the default ecliptic pole that is prograde
-    // (Venus and Uranus go negative); a body with its own pole (Pluto, Charon)
-    // lists the IAU positive pole and so stays positive. Earth's globe is phased
-    // from the absolute date instead (`simulation.rs:body_rotation`).
-    pub(super) spin_radians_per_second: f32,
+    // How the body turns; see `SpinModel`.
+    pub(super) spin: SpinModel,
     pub(super) mesh_subdivisions: u32,
     pub(super) metallic: f32,
     pub(super) roughness: f32,
@@ -118,36 +114,79 @@ pub(super) struct BodySpec {
     pub(super) orbital_period_days: Option<f64>,
     pub(super) semi_major_axis_au: Option<f64>,
     pub(super) rings: Option<RingSpec>,
-    // Spin pole direction in scene space (Y-up). Default ECLIPTIC_POLE_SCENE.
-    // Used for the body's mesh orientation, the plane of its rings, and as the
-    // orbit normal for any satellite parented to it (e.g. Charon orbits in
-    // Pluto's equatorial plane).
-    pub(super) pole_direction: [f32; 3],
+    // IAU north pole as J2000 equatorial right ascension and declination, from
+    // `assets/spice/pck00011.tpc` (constant terms). `BodySpec::pole_scene` turns
+    // it into scene space. Used for the mesh orientation, the plane of the rings,
+    // and as the orbit normal of Charon, which orbits in Pluto's equatorial plane.
+    pub(super) pole_ra_dec_deg: [f64; 2],
+    // How the surface texture is laid out, so its longitudes land on the body's.
+    pub(super) map: MapLayout,
 }
 
-// Ecliptic north pole expressed in scene space (Bevy Y-up). Default for every body
-// whose obliquity isn't separately specified.
-pub(super) const ECLIPTIC_POLE_SCENE: [f32; 3] = [0.0, 1.0, 0.0];
+/// How a body's surface turns. Each variant gives the angle `W` from the node of
+/// the body's equator on the J2000 equator to its prime meridian, right-handed
+/// about its IAU pole (the convention of `pck00011.tpc`), as a function of the
+/// absolute date, so the same date always shows the same face.
+#[derive(Clone, Copy)]
+pub(super) enum SpinModel {
+    /// `W = w0 + rate x days from J2000`, the constant and linear terms of the
+    /// kernel's `BODYnnn_PM`.
+    Iau { w0_deg: f64, deg_per_day: f64 },
+    /// Earth, from `ephemeris::earth_rotation_angle_radians`.
+    EarthRotationAngle,
+    /// Tidally locked: longitude 0 faces the body with this `spice_target`. It
+    /// is geometric, not `BODYnnn_PM`, because these orbits can be reconstructed
+    /// with an arbitrary phase (always for Charon and the Galilean moons, in
+    /// portable mode for the Moon), which a real rotation model would not match.
+    LockedTo(&'static str),
+}
 
-// Earth's J2000 spin pole: tilted from ecliptic north by the 23.4393° obliquity,
-// toward +Y of ECLIPJ2000 (scene -Z). The tilt is about the equinox direction
-// (+X), so `pole_rotation` leaves Earth's local +X on the J2000 equinox, the
-// direction `ephemeris::earth_rotation_angle_radians` is measured from.
-pub(super) const EARTH_POLE_SCENE: [f32; 3] = [0.0, 0.917_482, -0.397_777];
+/// Where a surface texture's longitudes are. Published maps differ, so check a
+/// new map against a known feature, or its GeoTIFF's `CenterLong` key.
+#[derive(Clone, Copy)]
+pub(super) struct MapLayout {
+    /// East longitude at the map's horizontal centre (u = 0.5). East is to the
+    /// right of the map, or to the left with `south_up`.
+    pub(super) centre_longitude_deg: f64,
+    /// The map is rotated half a turn, with the IAU south pole at its top.
+    pub(super) south_up: bool,
+}
 
-// Saturn's IAU spin pole (RA = 40.589°, Dec = 83.537°), converted from
-// equatorial J2000 to ecliptic and remapped into scene space; 28.05° from
-// ecliptic north (26.73° obliquity to its own orbit plus the orbit's tilt).
-// The rings lie in the equatorial plane this pole defines.
-pub(super) const SATURN_POLE_SCENE: [f32; 3] = [0.085_48, 0.882_52, -0.462_44];
+/// Obliquity of the J2000 ecliptic, the tilt between the equatorial frame of the
+/// IAU poles and `ECLIPJ2000` (84381.448 arcseconds, the value CSPICE uses).
+const J2000_OBLIQUITY_DEG: f64 = 23.439_291_1;
 
-// Pluto's IAU 2009 spin pole (RA = 132.993°, Dec = -6.163°), converted from
-// equatorial J2000 to ecliptic and remapped into scene space. It is the
-// right-hand-rule positive pole (it points south of the ecliptic: Pluto's
-// obliquity is ~120°), so Pluto's and Charon's spin rates are positive about
-// it and Charon's orbit (`simulation.rs:charon_relative_scene_offset`) runs
-// right-handed about it too — the system is mutually tidally locked.
-pub(super) const PLUTO_POLE_SCENE: [f32; 3] = [-0.677_73, -0.387_86, -0.624_69];
+/// Scene-space direction of a J2000 equatorial unit vector.
+fn equatorial_to_scene(equatorial: DVec3) -> DVec3 {
+    let (sin, cos) = J2000_OBLIQUITY_DEG.to_radians().sin_cos();
+    eclipj2000_to_scene(
+        [
+            equatorial.x,
+            equatorial.y * cos + equatorial.z * sin,
+            -equatorial.y * sin + equatorial.z * cos,
+        ],
+        1.0,
+    )
+}
+
+impl BodySpec {
+    /// IAU north pole, as a scene-space unit vector.
+    pub(super) fn pole_scene(&self) -> DVec3 {
+        let [ra, dec] = self.pole_ra_dec_deg.map(f64::to_radians);
+        equatorial_to_scene(DVec3::new(
+            dec.cos() * ra.cos(),
+            dec.cos() * ra.sin(),
+            dec.sin(),
+        ))
+    }
+
+    /// Node of the body's equator on the J2000 equator, the direction `W` is
+    /// measured from, as a scene-space unit vector.
+    pub(super) fn equator_node_scene(&self) -> DVec3 {
+        let ra = self.pole_ra_dec_deg[0].to_radians();
+        equatorial_to_scene(DVec3::new(-ra.sin(), ra.cos(), 0.0))
+    }
+}
 
 const fn sidereal_spin_radians_per_second(sidereal_period_days: f64) -> f32 {
     (std::f64::consts::TAU / (sidereal_period_days * SECONDS_PER_DAY)) as f32
@@ -509,7 +548,10 @@ pub(super) const BODIES: [BodySpec; 19] = [
         texture_file: "sun.png",
         cloud_texture: None,
         model_file: None,
-        spin_radians_per_second: sidereal_spin_radians_per_second(25.38),
+        spin: SpinModel::Iau {
+            w0_deg: 84.176,
+            deg_per_day: 14.1844,
+        },
         mesh_subdivisions: 96,
         metallic: 0.0,
         roughness: 0.6,
@@ -521,7 +563,11 @@ pub(super) const BODIES: [BodySpec; 19] = [
         orbital_period_days: None,
         semi_major_axis_au: None,
         rings: None,
-        pole_direction: ECLIPTIC_POLE_SCENE,
+        pole_ra_dec_deg: [286.13, 63.87],
+        map: MapLayout {
+            centre_longitude_deg: 0.0,
+            south_up: false,
+        },
     },
     BodySpec {
         display_name: "Mercury",
@@ -532,7 +578,10 @@ pub(super) const BODIES: [BodySpec; 19] = [
         texture_file: "mercury.png",
         cloud_texture: None,
         model_file: None,
-        spin_radians_per_second: sidereal_spin_radians_per_second(58.646),
+        spin: SpinModel::Iau {
+            w0_deg: 329.5988,
+            deg_per_day: 6.1385108,
+        },
         mesh_subdivisions: 56,
         metallic: 0.03,
         roughness: 0.86,
@@ -544,7 +593,11 @@ pub(super) const BODIES: [BodySpec; 19] = [
         orbital_period_days: Some(87.969),
         semi_major_axis_au: Some(0.387),
         rings: None,
-        pole_direction: ECLIPTIC_POLE_SCENE,
+        pole_ra_dec_deg: [281.0103, 61.4155],
+        map: MapLayout {
+            centre_longitude_deg: 0.0,
+            south_up: false,
+        },
     },
     BodySpec {
         display_name: "Venus",
@@ -555,7 +608,10 @@ pub(super) const BODIES: [BodySpec; 19] = [
         texture_file: "venus.png",
         cloud_texture: Some("venus_clouds.png"),
         model_file: None,
-        spin_radians_per_second: sidereal_spin_radians_per_second(-243.025),
+        spin: SpinModel::Iau {
+            w0_deg: 160.20,
+            deg_per_day: -1.4813688,
+        },
         mesh_subdivisions: 60,
         metallic: 0.02,
         roughness: 0.74,
@@ -567,7 +623,11 @@ pub(super) const BODIES: [BodySpec; 19] = [
         orbital_period_days: Some(224.701),
         semi_major_axis_au: Some(0.723),
         rings: None,
-        pole_direction: ECLIPTIC_POLE_SCENE,
+        pole_ra_dec_deg: [272.76, 67.16],
+        map: MapLayout {
+            centre_longitude_deg: 0.0,
+            south_up: true,
+        },
     },
     BodySpec {
         display_name: "Earth",
@@ -580,7 +640,7 @@ pub(super) const BODIES: [BodySpec; 19] = [
         texture_file: "earth.png",
         cloud_texture: None,
         model_file: None,
-        spin_radians_per_second: sidereal_spin_radians_per_second(0.997_269_68),
+        spin: SpinModel::EarthRotationAngle,
         mesh_subdivisions: 64,
         metallic: 0.05,
         roughness: 0.52,
@@ -592,7 +652,11 @@ pub(super) const BODIES: [BodySpec; 19] = [
         orbital_period_days: Some(365.256),
         semi_major_axis_au: Some(1.0),
         rings: None,
-        pole_direction: EARTH_POLE_SCENE,
+        pole_ra_dec_deg: [0.0, 90.0],
+        map: MapLayout {
+            centre_longitude_deg: 0.0,
+            south_up: false,
+        },
     },
     BodySpec {
         display_name: "Moon",
@@ -604,7 +668,7 @@ pub(super) const BODIES: [BodySpec; 19] = [
         texture_file: "moon.png",
         cloud_texture: None,
         model_file: None,
-        spin_radians_per_second: sidereal_spin_radians_per_second(27.321_661),
+        spin: SpinModel::LockedTo("EARTH"),
         mesh_subdivisions: 48,
         metallic: 0.01,
         roughness: 0.89,
@@ -616,7 +680,11 @@ pub(super) const BODIES: [BodySpec; 19] = [
         orbital_period_days: None,
         semi_major_axis_au: None,
         rings: None,
-        pole_direction: ECLIPTIC_POLE_SCENE,
+        pole_ra_dec_deg: [269.9949, 66.5392],
+        map: MapLayout {
+            centre_longitude_deg: 0.0,
+            south_up: false,
+        },
     },
     BodySpec {
         display_name: "Mars",
@@ -627,7 +695,10 @@ pub(super) const BODIES: [BodySpec; 19] = [
         texture_file: "mars.png",
         cloud_texture: None,
         model_file: None,
-        spin_radians_per_second: sidereal_spin_radians_per_second(1.025_957),
+        spin: SpinModel::Iau {
+            w0_deg: 176.630,
+            deg_per_day: 350.891982443297,
+        },
         mesh_subdivisions: 56,
         metallic: 0.02,
         roughness: 0.7,
@@ -639,7 +710,13 @@ pub(super) const BODIES: [BodySpec; 19] = [
         orbital_period_days: Some(686.98),
         semi_major_axis_au: Some(1.524),
         rings: None,
-        pole_direction: ECLIPTIC_POLE_SCENE,
+        // The kernel's Mars model has terms of up to 1.6° that change over
+        // centuries; these constants fold in their present values.
+        pole_ra_dec_deg: [317.681, 52.887],
+        map: MapLayout {
+            centre_longitude_deg: 0.0,
+            south_up: false,
+        },
     },
     BodySpec {
         display_name: "Ceres",
@@ -650,7 +727,10 @@ pub(super) const BODIES: [BodySpec; 19] = [
         texture_file: "ceres.png",
         cloud_texture: None,
         model_file: None,
-        spin_radians_per_second: sidereal_spin_radians_per_second(0.3781),
+        spin: SpinModel::Iau {
+            w0_deg: 170.650,
+            deg_per_day: 952.1532,
+        },
         mesh_subdivisions: 40,
         metallic: 0.01,
         roughness: 0.9,
@@ -662,7 +742,11 @@ pub(super) const BODIES: [BodySpec; 19] = [
         orbital_period_days: Some(1680.0),
         semi_major_axis_au: Some(2.767),
         rings: None,
-        pole_direction: ECLIPTIC_POLE_SCENE,
+        pole_ra_dec_deg: [291.418, 66.764],
+        map: MapLayout {
+            centre_longitude_deg: 180.0,
+            south_up: false,
+        },
     },
     BodySpec {
         display_name: "Vesta",
@@ -673,7 +757,10 @@ pub(super) const BODIES: [BodySpec; 19] = [
         texture_file: "vesta.png",
         cloud_texture: None,
         model_file: None,
-        spin_radians_per_second: sidereal_spin_radians_per_second(0.2226),
+        spin: SpinModel::Iau {
+            w0_deg: 285.39,
+            deg_per_day: 1617.3329428,
+        },
         mesh_subdivisions: 40,
         metallic: 0.01,
         roughness: 0.9,
@@ -685,7 +772,11 @@ pub(super) const BODIES: [BodySpec; 19] = [
         orbital_period_days: Some(1325.0),
         semi_major_axis_au: Some(2.361),
         rings: None,
-        pole_direction: ECLIPTIC_POLE_SCENE,
+        pole_ra_dec_deg: [309.031, 42.235],
+        map: MapLayout {
+            centre_longitude_deg: 0.0,
+            south_up: false,
+        },
     },
     BodySpec {
         display_name: "Jupiter",
@@ -698,7 +789,10 @@ pub(super) const BODIES: [BodySpec; 19] = [
         texture_file: "jupiter.png",
         cloud_texture: None,
         model_file: None,
-        spin_radians_per_second: sidereal_spin_radians_per_second(0.41354),
+        spin: SpinModel::Iau {
+            w0_deg: 284.95,
+            deg_per_day: 870.536,
+        },
         mesh_subdivisions: 72,
         metallic: 0.0,
         roughness: 0.6,
@@ -710,7 +804,11 @@ pub(super) const BODIES: [BodySpec; 19] = [
         orbital_period_days: Some(4332.589),
         semi_major_axis_au: Some(5.204),
         rings: None,
-        pole_direction: ECLIPTIC_POLE_SCENE,
+        pole_ra_dec_deg: [268.056595, 64.495303],
+        map: MapLayout {
+            centre_longitude_deg: 0.0,
+            south_up: false,
+        },
     },
     BodySpec {
         display_name: "Io",
@@ -722,7 +820,7 @@ pub(super) const BODIES: [BodySpec; 19] = [
         texture_file: "io.png",
         cloud_texture: None,
         model_file: None,
-        spin_radians_per_second: sidereal_spin_radians_per_second(1.769138),
+        spin: SpinModel::LockedTo("JUPITER BARYCENTER"),
         mesh_subdivisions: 48,
         metallic: 0.01,
         roughness: 0.85,
@@ -734,7 +832,11 @@ pub(super) const BODIES: [BodySpec; 19] = [
         orbital_period_days: None,
         semi_major_axis_au: None,
         rings: None,
-        pole_direction: ECLIPTIC_POLE_SCENE,
+        pole_ra_dec_deg: [268.05, 64.5],
+        map: MapLayout {
+            centre_longitude_deg: 0.0,
+            south_up: false,
+        },
     },
     BodySpec {
         display_name: "Europa",
@@ -746,7 +848,7 @@ pub(super) const BODIES: [BodySpec; 19] = [
         texture_file: "europa.png",
         cloud_texture: None,
         model_file: None,
-        spin_radians_per_second: sidereal_spin_radians_per_second(3.551181),
+        spin: SpinModel::LockedTo("JUPITER BARYCENTER"),
         mesh_subdivisions: 44,
         metallic: 0.02,
         roughness: 0.55,
@@ -758,7 +860,11 @@ pub(super) const BODIES: [BodySpec; 19] = [
         orbital_period_days: None,
         semi_major_axis_au: None,
         rings: None,
-        pole_direction: ECLIPTIC_POLE_SCENE,
+        pole_ra_dec_deg: [268.08, 64.51],
+        map: MapLayout {
+            centre_longitude_deg: 180.0,
+            south_up: false,
+        },
     },
     BodySpec {
         display_name: "Ganymede",
@@ -770,7 +876,7 @@ pub(super) const BODIES: [BodySpec; 19] = [
         texture_file: "ganymede.png",
         cloud_texture: None,
         model_file: None,
-        spin_radians_per_second: sidereal_spin_radians_per_second(7.154553),
+        spin: SpinModel::LockedTo("JUPITER BARYCENTER"),
         mesh_subdivisions: 52,
         metallic: 0.01,
         roughness: 0.82,
@@ -782,7 +888,11 @@ pub(super) const BODIES: [BodySpec; 19] = [
         orbital_period_days: None,
         semi_major_axis_au: None,
         rings: None,
-        pole_direction: ECLIPTIC_POLE_SCENE,
+        pole_ra_dec_deg: [268.2, 64.57],
+        map: MapLayout {
+            centre_longitude_deg: 180.0,
+            south_up: false,
+        },
     },
     BodySpec {
         display_name: "Callisto",
@@ -794,7 +904,7 @@ pub(super) const BODIES: [BodySpec; 19] = [
         texture_file: "callisto.png",
         cloud_texture: None,
         model_file: None,
-        spin_radians_per_second: sidereal_spin_radians_per_second(16.689018),
+        spin: SpinModel::LockedTo("JUPITER BARYCENTER"),
         mesh_subdivisions: 48,
         metallic: 0.01,
         roughness: 0.9,
@@ -806,7 +916,11 @@ pub(super) const BODIES: [BodySpec; 19] = [
         orbital_period_days: None,
         semi_major_axis_au: None,
         rings: None,
-        pole_direction: ECLIPTIC_POLE_SCENE,
+        pole_ra_dec_deg: [268.72, 64.83],
+        map: MapLayout {
+            centre_longitude_deg: 180.0,
+            south_up: false,
+        },
     },
     BodySpec {
         display_name: "Saturn",
@@ -817,7 +931,10 @@ pub(super) const BODIES: [BodySpec; 19] = [
         texture_file: "saturn.png",
         cloud_texture: None,
         model_file: None,
-        spin_radians_per_second: sidereal_spin_radians_per_second(0.444),
+        spin: SpinModel::Iau {
+            w0_deg: 38.90,
+            deg_per_day: 810.7939024,
+        },
         mesh_subdivisions: 72,
         metallic: 0.0,
         roughness: 0.62,
@@ -832,7 +949,11 @@ pub(super) const BODIES: [BodySpec; 19] = [
             inner_radius: 1.72,
             outer_radius: 3.53,
         }),
-        pole_direction: SATURN_POLE_SCENE,
+        pole_ra_dec_deg: [40.589, 83.537],
+        map: MapLayout {
+            centre_longitude_deg: 0.0,
+            south_up: false,
+        },
     },
     BodySpec {
         display_name: "Uranus",
@@ -843,7 +964,10 @@ pub(super) const BODIES: [BodySpec; 19] = [
         texture_file: "uranus.png",
         cloud_texture: None,
         model_file: None,
-        spin_radians_per_second: sidereal_spin_radians_per_second(-0.71833),
+        spin: SpinModel::Iau {
+            w0_deg: 203.81,
+            deg_per_day: -501.1600928,
+        },
         mesh_subdivisions: 64,
         metallic: 0.0,
         roughness: 0.45,
@@ -855,7 +979,11 @@ pub(super) const BODIES: [BodySpec; 19] = [
         orbital_period_days: Some(30_688.5),
         semi_major_axis_au: Some(19.201),
         rings: None,
-        pole_direction: ECLIPTIC_POLE_SCENE,
+        pole_ra_dec_deg: [257.311, -15.175],
+        map: MapLayout {
+            centre_longitude_deg: 0.0,
+            south_up: false,
+        },
     },
     BodySpec {
         display_name: "Neptune",
@@ -866,7 +994,10 @@ pub(super) const BODIES: [BodySpec; 19] = [
         texture_file: "neptune.png",
         cloud_texture: None,
         model_file: None,
-        spin_radians_per_second: sidereal_spin_radians_per_second(0.67125),
+        spin: SpinModel::Iau {
+            w0_deg: 249.978,
+            deg_per_day: 541.1397757,
+        },
         mesh_subdivisions: 64,
         metallic: 0.0,
         roughness: 0.5,
@@ -878,7 +1009,11 @@ pub(super) const BODIES: [BodySpec; 19] = [
         orbital_period_days: Some(60_182.0),
         semi_major_axis_au: Some(30.047),
         rings: None,
-        pole_direction: ECLIPTIC_POLE_SCENE,
+        pole_ra_dec_deg: [299.36, 43.46],
+        map: MapLayout {
+            centre_longitude_deg: 0.0,
+            south_up: false,
+        },
     },
     BodySpec {
         display_name: "Pluto",
@@ -891,7 +1026,7 @@ pub(super) const BODIES: [BodySpec; 19] = [
         texture_file: "pluto.png",
         cloud_texture: None,
         model_file: None,
-        spin_radians_per_second: sidereal_spin_radians_per_second(6.38723),
+        spin: SpinModel::LockedTo("CHARON"),
         mesh_subdivisions: 48,
         metallic: 0.0,
         roughness: 0.86,
@@ -903,7 +1038,11 @@ pub(super) const BODIES: [BodySpec; 19] = [
         orbital_period_days: Some(90_560.0),
         semi_major_axis_au: Some(39.482),
         rings: None,
-        pole_direction: PLUTO_POLE_SCENE,
+        pole_ra_dec_deg: [132.993, -6.163],
+        map: MapLayout {
+            centre_longitude_deg: 180.0,
+            south_up: false,
+        },
     },
     BodySpec {
         display_name: "Charon",
@@ -915,7 +1054,7 @@ pub(super) const BODIES: [BodySpec; 19] = [
         texture_file: "charon.png",
         cloud_texture: None,
         model_file: None,
-        spin_radians_per_second: sidereal_spin_radians_per_second(6.38723),
+        spin: SpinModel::LockedTo("PLUTO BARYCENTER"),
         mesh_subdivisions: 36,
         metallic: 0.0,
         roughness: 0.9,
@@ -927,7 +1066,11 @@ pub(super) const BODIES: [BodySpec; 19] = [
         orbital_period_days: None,
         semi_major_axis_au: None,
         rings: None,
-        pole_direction: PLUTO_POLE_SCENE,
+        pole_ra_dec_deg: [132.993, -6.163],
+        map: MapLayout {
+            centre_longitude_deg: 0.0,
+            south_up: false,
+        },
     },
     BodySpec {
         display_name: "Voyager 1",
@@ -943,7 +1086,10 @@ pub(super) const BODIES: [BodySpec; 19] = [
         cloud_texture: None,
         model_file: Some("models/spacecraft/voyager_probe.glb"),
         // Attitude is held dish-to-Earth by `update_body_positions`, not spun.
-        spin_radians_per_second: 0.0,
+        spin: SpinModel::Iau {
+            w0_deg: 0.0,
+            deg_per_day: 0.0,
+        },
         mesh_subdivisions: 0,
         metallic: 0.0,
         roughness: 0.0,
@@ -959,7 +1105,11 @@ pub(super) const BODIES: [BodySpec; 19] = [
         orbital_period_days: None,
         semi_major_axis_au: None,
         rings: None,
-        pole_direction: ECLIPTIC_POLE_SCENE,
+        pole_ra_dec_deg: [270.0, 66.56],
+        map: MapLayout {
+            centre_longitude_deg: 0.0,
+            south_up: false,
+        },
     },
 ];
 
@@ -981,19 +1131,24 @@ pub(super) fn drawn_size_factor(spec: &BodySpec, true_scale: bool) -> f32 {
     (spec.physical_radius_km / KM_PER_AU * AU_TO_SCENE_UNITS) as f32 / spec.visual_radius
 }
 
-/// Rotation that stands a mesh's local +Z on the body's `pole_direction`.
-/// Bevy's UV sphere has its poles (and its texture's north) on +Z, so this
-/// orients both the body and its cloud shell; the ring disc (normal +Y) uses
-/// `ring_rotation`. Equals `Quat::from_rotation_x(-FRAC_PI_2)` for the
-/// default ecliptic pole.
+/// Rotation that stands a mesh's local +Z on the body's pole with local +X on
+/// its equator's node, so a further rotation by `W` about +Z puts +X on the prime
+/// meridian. Orients both the body and its cloud shell; the ring disc (normal +Y)
+/// uses `ring_rotation`.
 pub(super) fn pole_rotation(spec: &BodySpec) -> Quat {
-    Quat::from_rotation_arc(Vec3::Z, Vec3::from_array(spec.pole_direction).normalize())
+    let pole = spec.pole_scene();
+    let node = spec.equator_node_scene();
+    Quat::from_mat3(&Mat3::from_cols(
+        node.as_vec3(),
+        pole.cross(node).as_vec3(),
+        pole.as_vec3(),
+    ))
 }
 
 /// Rotation that lays `util::ring_mesh`'s +Y-normal disc in the body's
 /// equatorial plane.
 pub(super) fn ring_rotation(spec: &BodySpec) -> Quat {
-    Quat::from_rotation_arc(Vec3::Y, Vec3::from_array(spec.pole_direction).normalize())
+    Quat::from_rotation_arc(Vec3::Y, spec.pole_scene().as_vec3())
 }
 
 #[cfg(test)]
@@ -1031,14 +1186,19 @@ mod tests {
     #[test]
     fn body_poles_are_unit_vectors_and_saturn_matches_its_obliquity() {
         for body in BODIES {
-            let pole = Vec3::from_array(body.pole_direction);
+            let pole = body.pole_scene();
             assert!(
                 (pole.length() - 1.0).abs() < 1e-4,
                 "{} pole",
                 body.display_name
             );
         }
-        let saturn = Vec3::from_array(SATURN_POLE_SCENE);
+        let saturn = BODIES
+            .iter()
+            .find(|b| b.display_name == "Saturn")
+            .unwrap()
+            .pole_scene()
+            .as_vec3();
         let tilt_deg = saturn.dot(Vec3::Y).acos().to_degrees();
         assert!(
             (tilt_deg - 28.05).abs() < 0.05,
@@ -1050,7 +1210,7 @@ mod tests {
     fn ring_rotation_puts_the_disc_normal_on_the_pole() {
         let saturn = BODIES.iter().find(|b| b.display_name == "Saturn").unwrap();
         let normal = ring_rotation(saturn) * Vec3::Y;
-        let pole = Vec3::from_array(saturn.pole_direction);
+        let pole = saturn.pole_scene().as_vec3();
         assert!((normal - pole).length() < 1e-5);
         assert!(((pole_rotation(saturn) * Vec3::Z) - pole).length() < 1e-5);
     }

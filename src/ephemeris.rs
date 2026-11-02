@@ -224,6 +224,18 @@ pub fn earth_rotation_angle_radians(unix_days: f64) -> f64 {
     (TAU * (0.779_057_273_264 + 1.002_737_811_911_354_5 * days_from_j2000)).rem_euclid(TAU)
 }
 
+/// `W` of an IAU rotation model on `unix_days`, in radians within one turn: the
+/// constant and linear terms of a kernel's `BODYnnn_PM`, `w0 + rate x d`, where
+/// `d` counts TDB days from J2000. TDB runs a roughly constant ~69 s ahead of UTC
+/// at present, which matters here: Vesta turns 1.3° in that time.
+pub fn iau_prime_meridian_radians(w0_deg: f64, deg_per_day: f64, unix_days: f64) -> f64 {
+    const TDB_MINUS_UTC_DAYS: f64 = 69.184 / 86_400.0;
+    let days_from_j2000 = unix_days + TDB_MINUS_UTC_DAYS - J2000_UNIX_DAYS;
+    (w0_deg + deg_per_day * days_from_j2000)
+        .rem_euclid(360.0)
+        .to_radians()
+}
+
 /// A heliocentric Keplerian ellipse (ECLIPJ2000, angles in radians) with the
 /// body's mean anomaly on it at one instant. `position_au` is where the body
 /// is; `position_at_mean_anomaly_au` traces the whole ellipse for an orbit

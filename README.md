@@ -16,6 +16,7 @@ complex systems-programming project.
 
 - 3D scene with interactive orbit camera (`bevy` + `bevy_egui`)
 - SPICE-based planet/moon ephemerides (`rust-spice` + NAIF kernels)
+- Globes turned to the real date: IAU poles and rotation, Earth's day side matching UTC, and tidally locked moons facing their primary
 - Side-panel target search with smooth camera fly-to
 - Texture-driven PBR rendering with atmosphere halos and Milky Way starfield
 - Realistic solar lighting with inverse-square falloff across the solar system

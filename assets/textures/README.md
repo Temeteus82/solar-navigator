@@ -79,6 +79,25 @@ FULL_RES=1 TARGET_WIDTH=4096 ./scripts/download_textures_minor_bodies_science.sh
 .\scripts\download_textures_minor_bodies_science.ps1 -FullRes -TargetWidth 4096
 ```
 
+## Map layouts
+
+Published maps do not share one longitude convention, and a globe only shows the
+right face if `BodySpec::map` (`src/app/types.rs`) states the layout of the file. All
+maps here have east to the right, except where noted.
+
+| Map | Longitude at centre | How it was checked |
+| --- | --- | --- |
+| Earth, Moon, Mars, Mercury | 0° | Greenwich, Mare Crisium, Olympus Mons, Kuiper |
+| Io, Charon | 0° | GeoTIFF `CenterLong`; also Pele on Io |
+| Ceres, Pluto, Europa, Ganymede, Callisto | 180° | GeoTIFF `CenterLong`; also Occator, Sputnik Planitia, Pwyll, Tros, Valhalla |
+| Venus | 0°, rotated half a turn (south up, east to the left) | Maxwell Montes, Devana Chasma, Aphrodite Terra |
+| Vesta | **Unverified**, assumed 0° | Dawn's Vesta products use more than one longitude system |
+| Sun, Jupiter, Saturn, Uranus, Neptune | Not applicable | No fixed surface features to place |
+
+For a new map, read `CenterLong` from the GeoTIFF's GeoKeys if it has them, and check a
+named feature against its published coordinates. The test
+`map_features_land_at_their_published_coordinates` records one for each checked globe.
+
 ## GPU texture compression (optional)
 
 After downloading, you can encode the planet/moon maps into GPU block-compressed,

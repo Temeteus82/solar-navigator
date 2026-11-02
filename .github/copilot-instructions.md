@@ -19,9 +19,9 @@ src/
   ephemeris.rs     — SpiceEphemeris + Horizons client (pure Rust, no Bevy)
   app/
     mod.rs         — Bevy App construction and system registration
-    types.rs       — Resources, Components, BODIES array (18 solar-system bodies)
+    types.rs       — Resources, Components, BODIES array (19 bodies, including Voyager 1)
     setup.rs       — Startup: scene spawn, textures, Horizons sync task
-    simulation.rs  — Update: keyboard, time advance, body positions, spin
+    simulation.rs  — Update: keyboard, time advance, body positions, date-based orientation
     camera.rs      — Update: orbit + free-fly cameras (F toggles), fly-to animation, body tracking
     render.rs      — Update: solar lighting, visibility toggles, window title
     asteroids.rs   — Update: procedural asteroid belt (Keplerian swarm)
