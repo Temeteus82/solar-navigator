@@ -10,12 +10,12 @@ use super::types::{
 use super::util::eclipj2000_to_scene;
 use crate::ephemeris::{
     CALLISTO_ORBIT, CHARON_ORBIT, EUROPA_ORBIT, GANYMEDE_ORBIT, IO_ORBIT, SatelliteOrbit,
-    satellite_offset_au,
+    earth_rotation_angle_radians, satellite_offset_au,
 };
 use bevy::math::DVec3;
 use bevy::prelude::*;
 use bevy_egui::input::EguiWantsInput;
-use std::f64::consts::TAU;
+use std::f64::consts::{PI, TAU};
 
 const CHARON_TO_PLUTO_MASS_RATIO: f64 = 0.1218;
 
@@ -133,16 +133,7 @@ pub(super) fn update_body_positions(
                 transform.rotation = Quat::from_rotation_arc(Vec3::Y, sunward);
             }
         } else {
-            // Rotation phase is a function of simulation time, not an
-            // accumulation of per-frame steps, so a date jump or Backspace
-            // turns the globe along with the clock and the result is the
-            // same however the clock got there. Local +Z is the body's
-            // `pole_direction`; a positive angle is right-handed about it.
-            transform.rotation = pole_rotation(&spec)
-                * Quat::from_rotation_z(spin_angle_radians(
-                    spec.spin_radians_per_second,
-                    elapsed_seconds,
-                ));
+            transform.rotation = body_rotation(&spec, elapsed_seconds, unix_days);
         }
 
         if let Some(slot) = body_runtime.positions.get_mut(body.index) {
@@ -225,6 +216,32 @@ fn apply_pluto_charon_center_positions(
         pluto_charon_barycenter - charon_from_pluto * charon_mass_fraction;
     scene_positions[charon_index] =
         pluto_charon_barycenter + charon_from_pluto * pluto_mass_fraction;
+}
+
+/// A body's orientation at `elapsed_seconds` from launch, `unix_days` being the
+/// same instant on the absolute clock. Rotation phase is a function of
+/// simulation time, not an accumulation of per-frame steps, so a date jump or
+/// Backspace turns the globe along with the clock and the result is the same
+/// however the clock got there. Local +Z is the body's `pole_direction`; a
+/// positive angle is right-handed about it.
+///
+/// Earth alone is phased to the real date, so its map shows the actual time of
+/// day. Every other body starts each launch at phase 0.
+fn body_rotation(spec: &BodySpec, elapsed_seconds: f64, unix_days: f64) -> Quat {
+    let spin_angle = if spec.spice_target == "EARTH" {
+        earth_spin_angle_radians(unix_days)
+    } else {
+        spin_angle_radians(spec.spin_radians_per_second, elapsed_seconds)
+    };
+    pole_rotation(spec) * Quat::from_rotation_z(spin_angle)
+}
+
+/// Spin that puts Greenwich where the Earth Rotation Angle says it is. An
+/// equirectangular map centred on Greenwich has it at u = 0.5, which Bevy's UV
+/// sphere (u = 0 on +X, u growing right-handed about +Z) places on local -X,
+/// half a turn from the local +X that `pole_rotation` leaves on the equinox.
+fn earth_spin_angle_radians(unix_days: f64) -> f32 {
+    (earth_rotation_angle_radians(unix_days) - PI).rem_euclid(TAU) as f32
 }
 
 /// Rotation angle about a body's local +Z (its `pole_direction`) at
@@ -372,15 +389,16 @@ pub(super) fn apply_body_scale(
 
 #[cfg(test)]
 mod tests {
-    use super::super::types::{BodySpec, KM_PER_AU, pole_rotation};
+    use super::super::types::{BodySpec, KM_PER_AU};
     use super::{
         CHARON_TO_PLUTO_MASS_RATIO, apply_jupiter_moon_positions,
-        apply_pluto_charon_center_positions, body_index_for_target, charon_relative_scene_offset,
-        position_is_reconstructed, spin_angle_radians,
+        apply_pluto_charon_center_positions, body_index_for_target, body_rotation,
+        charon_relative_scene_offset, position_is_reconstructed, spin_angle_radians,
     };
     use crate::ephemeris::{CALLISTO_ORBIT, CHARON_ORBIT, IO_ORBIT};
     use bevy::math::DVec3;
     use bevy::prelude::*;
+    use chrono::{TimeZone, Utc};
     use std::f64::consts::TAU;
 
     #[test]
@@ -412,12 +430,74 @@ mod tests {
         // A point on the mesh's equator (Bevy's UV sphere has its poles on
         // local +-Z and its texture's north at +Z).
         let local = Vec3::X;
-        let at = |seconds: f64| {
-            (pole_rotation(spec)
-                * Quat::from_rotation_z(spin_angle_radians(spec.spin_radians_per_second, seconds)))
-                * local
-        };
+        let at =
+            |seconds: f64| body_rotation(spec, seconds, seconds / super::SECONDS_PER_DAY) * local;
         (pole, at(0.0), at(60.0))
+    }
+
+    /// Scene direction from Earth to the Sun, from the Astronomical Almanac's
+    /// low-precision solar longitude (good to ~0.01°), independent of the app.
+    fn almanac_sun_direction(unix_days: f64) -> Vec3 {
+        let days_from_j2000 = unix_days - 10_957.5;
+        let mean_longitude = 280.460 + 0.985_647_4 * days_from_j2000;
+        let mean_anomaly = (357.528 + 0.985_600_3 * days_from_j2000).to_radians();
+        let longitude =
+            (mean_longitude + 1.915 * mean_anomaly.sin() + 0.020 * (2.0 * mean_anomaly).sin())
+                .to_radians();
+        Vec3::new(longitude.cos() as f32, 0.0, -longitude.sin() as f32)
+    }
+
+    #[test]
+    fn earth_map_faces_the_sun_at_the_real_subsolar_point() {
+        // Expected subsolar points follow from the published equation of time
+        // and solar declination for each date.
+        let cases = [
+            // 01:00 UTC, equation of time +16.4 min: over the western Pacific.
+            ((2026, 11, 2, 1), -14.9_f32, 160.9_f32),
+            // Noon UTC at the June solstice, equation of time -1.7 min: the
+            // Tropic of Cancer on the Greenwich meridian.
+            ((2026, 6, 21, 12), 23.44, 0.4),
+        ];
+        let earth = super::BODIES
+            .iter()
+            .find(|b| b.display_name == "Earth")
+            .unwrap();
+        for ((year, month, day, hour), latitude, longitude) in cases {
+            let unix_days = Utc
+                .with_ymd_and_hms(year, month, day, hour, 0, 0)
+                .unwrap()
+                .timestamp() as f64
+                / super::SECONDS_PER_DAY;
+            let (latitude, longitude) = (latitude.to_radians(), longitude.to_radians());
+            // Where a UV sphere draws that map location: the map's Greenwich
+            // (u = 0.5) on local -X, longitude growing east, north on +Z.
+            let surface_point = Vec3::new(
+                -latitude.cos() * longitude.cos(),
+                -latitude.cos() * longitude.sin(),
+                latitude.sin(),
+            );
+            let rotation = body_rotation(earth, 0.0, unix_days);
+            let error_degrees = (rotation * surface_point)
+                .angle_between(almanac_sun_direction(unix_days))
+                .to_degrees();
+            assert!(
+                error_degrees < 1.0,
+                "{year}-{month}-{day} {hour}:00 UTC: map is {error_degrees}° from the subsolar point"
+            );
+        }
+    }
+
+    #[test]
+    fn earth_phase_follows_the_date_not_the_launch() {
+        let earth = super::BODIES
+            .iter()
+            .find(|b| b.display_name == "Earth")
+            .unwrap();
+        let unix_days = 20_000.25;
+        // The same instant, reached 0 s or 3 days after two different launches.
+        let launched_now = body_rotation(earth, 0.0, unix_days);
+        let launched_earlier = body_rotation(earth, 3.0 * super::SECONDS_PER_DAY, unix_days);
+        assert!(launched_now.angle_between(launched_earlier) < 1e-6);
     }
 
     #[test]

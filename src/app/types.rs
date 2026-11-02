@@ -101,7 +101,8 @@ pub(super) struct BodySpec {
     // about `pole_direction`: positive spins the surface counter-clockwise
     // seen from the pole tip. With the default ecliptic pole that is prograde
     // (Venus and Uranus go negative); a body with its own pole (Pluto, Charon)
-    // lists the IAU positive pole and so stays positive.
+    // lists the IAU positive pole and so stays positive. Earth's globe is phased
+    // from the absolute date instead (`simulation.rs:body_rotation`).
     pub(super) spin_radians_per_second: f32,
     pub(super) mesh_subdivisions: u32,
     pub(super) metallic: f32,
@@ -127,6 +128,12 @@ pub(super) struct BodySpec {
 // Ecliptic north pole expressed in scene space (Bevy Y-up). Default for every body
 // whose obliquity isn't separately specified.
 pub(super) const ECLIPTIC_POLE_SCENE: [f32; 3] = [0.0, 1.0, 0.0];
+
+// Earth's J2000 spin pole: tilted from ecliptic north by the 23.4393° obliquity,
+// toward +Y of ECLIPJ2000 (scene -Z). The tilt is about the equinox direction
+// (+X), so `pole_rotation` leaves Earth's local +X on the J2000 equinox, the
+// direction `ephemeris::earth_rotation_angle_radians` is measured from.
+pub(super) const EARTH_POLE_SCENE: [f32; 3] = [0.0, 0.917_482, -0.397_777];
 
 // Saturn's IAU spin pole (RA = 40.589°, Dec = 83.537°), converted from
 // equatorial J2000 to ecliptic and remapped into scene space; 28.05° from
@@ -585,7 +592,7 @@ pub(super) const BODIES: [BodySpec; 19] = [
         orbital_period_days: Some(365.256),
         semi_major_axis_au: Some(1.0),
         rings: None,
-        pole_direction: ECLIPTIC_POLE_SCENE,
+        pole_direction: EARTH_POLE_SCENE,
     },
     BodySpec {
         display_name: "Moon",
