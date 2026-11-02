@@ -7,7 +7,7 @@ Required kernel files for SPICE mode:
 
 Optional kernels loaded if present:
 
-- `pck00011.tpc` (planetary constants)
+- `pck00011.tpc` (planetary constants; also the source of the rotation data in `src/app/types.rs:BODIES`)
 - `gm_de440.tpc` (gravity constants from DE440)
 
 Use this from project root to fetch the kernels:

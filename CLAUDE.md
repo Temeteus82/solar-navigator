@@ -191,8 +191,10 @@ src/
     camera.rs        — Update systems: orbit + free-fly cameras, mode toggle (F), jump/fly-to, tracking
     render.rs        — Update systems: lighting presets, visibility, window title
     asteroids.rs     — Procedural asteroid belt: Keplerian swarm spawn + per-frame update
-    materials.rs     — PlanetAtmosphereMaterial + PlanetRingMaterial (custom Bevy Materials, WGSL)
+    materials.rs     — PlanetAtmosphereMaterial + PlanetRingMaterial (custom Bevy Materials, WESL)
     ui.rs            — egui side panel (EguiPrimaryContextPass schedule)
+    theme.rs         — egui panel styling
+    raytracing.rs    — experimental Solari lighting (`--features raytracing`; see docs/raytracing-notes.md)
     util.rs          — asset resolution, image/starfield helpers, format_simulation_speed
 ```
 
@@ -266,7 +268,7 @@ Rules that follow from it:
   the `Update` schedule in `mod.rs`). That system is NonSend and waits for the main thread,
   so an unordered reader can run first on a worker thread and use last frame's positions —
   at the 100 000× speed cap an atmosphere halo would trail its planet by half a radius.
-- **The Sun is not at the render origin.** The custom WGSL shaders receive its render-space
+- **The Sun is not at the render origin.** The custom WESL shaders receive its render-space
   position in a `sun_position` uniform (`render.rs:sync_shader_sun_positions`) rather
   than assuming `(0, 0, 0)`.
 - The sky sphere deliberately has no `WorldPosition`: left at the render origin, it is

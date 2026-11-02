@@ -17,10 +17,10 @@ complex systems-programming project.
 - 3D scene with interactive orbit camera (`bevy` + `bevy_egui`)
 - SPICE-based planet/moon ephemerides (`rust-spice` + NAIF kernels)
 - Globes turned to the real date: IAU poles and rotation, Earth's day side matching UTC, and tidally locked moons facing their primary
-- Side-panel target search with smooth camera fly-to
+- Side-panel target selector with smooth camera fly-to
 - Texture-driven PBR rendering with atmosphere halos and Milky Way starfield
-- Realistic solar lighting with inverse-square falloff across the solar system
-- Point-light shadow maps and screen-space ambient occlusion (SSAO)
+- Even sunlight on every body: a directional light aimed from the Sun at the camera's focus, so distant planets stay visible
+- Sun shadows, contact shadows and screen-space ambient occlusion (SSAO)
 - Analytic fallback orbits when SPICE kernels are absent
 
 ---
@@ -103,13 +103,14 @@ download script accepts `-Force` to re-download files that are already present.
 | Shift + left drag | Pan camera |
 | Click a body | Select it and fly the camera to it |
 | `F` | Toggle Orbit camera ↔ Free-fly camera |
+| `W`/`A`/`S`/`D`, `Q`/`E` (Orbit mode) | Orbit and zoom camera |
 | `W`/`A`/`S`/`D`, `Q`/`E` (Free mode) | Fly forward/left/back/right, down/up |
 | Drag (Free mode) | Look around |
 | Shift (Free mode) | Boost movement speed |
-| `Space` | Pause / unpause simulation |
+| `Space` | Pause / unpause simulation (the app starts paused) |
 | `Up` / `Down` | Increase / decrease simulation speed |
 | `Backspace` | Reset simulation state and camera |
-| Side panel | Search targets, select body, jump camera |
+| Side panel | Select a target, jump camera, set date and display options |
 
 ## Modes
 
@@ -125,14 +126,14 @@ The window title shows the current mode and selected body.
 
 ```bash
 cargo fmt --check
-cargo check --all-targets
-cargo clippy --all-targets -- -D warnings
-cargo test --all-targets
+cargo check --locked --all-targets
+cargo clippy --locked --all-targets -- -D warnings
+cargo test --locked --all-targets
 
 # Also validate the portable (non-SPICE) build profile:
-cargo check --all-targets --no-default-features
-cargo clippy --all-targets --no-default-features -- -D warnings
-cargo test --all-targets --no-default-features
+cargo check --locked --all-targets --no-default-features
+cargo clippy --locked --all-targets --no-default-features -- -D warnings
+cargo test --locked --all-targets --no-default-features
 ```
 
 ---
