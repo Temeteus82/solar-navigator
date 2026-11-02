@@ -214,6 +214,28 @@ fn planet_mean_elements(target: &str) -> Option<&'static PlanetMeanElements> {
 const J2000_UNIX_DAYS: f64 = 10_957.5;
 const DAYS_PER_JULIAN_CENTURY: f64 = 36_525.0;
 
+/// Earth Rotation Angle (IAU 2000) on `unix_days`, in radians within one turn:
+/// how far Greenwich has turned, right-handed about Earth's pole, from the
+/// fixed J2000 equinox direction (+X of `ECLIPJ2000`). UTC stands in for UT1,
+/// which it tracks to within a second (~0.004°). The angle ignores precession,
+/// which is what suits a fixed J2000 frame and pole.
+pub fn earth_rotation_angle_radians(unix_days: f64) -> f64 {
+    let days_from_j2000 = unix_days - J2000_UNIX_DAYS;
+    (TAU * (0.779_057_273_264 + 1.002_737_811_911_354_5 * days_from_j2000)).rem_euclid(TAU)
+}
+
+/// `W` of an IAU rotation model on `unix_days`, in radians within one turn: the
+/// constant and linear terms of a kernel's `BODYnnn_PM`, `w0 + rate x d`, where
+/// `d` counts TDB days from J2000. TDB runs a roughly constant ~69 s ahead of UTC
+/// at present, which matters here: Vesta turns 1.3° in that time.
+pub fn iau_prime_meridian_radians(w0_deg: f64, deg_per_day: f64, unix_days: f64) -> f64 {
+    const TDB_MINUS_UTC_DAYS: f64 = 69.184 / 86_400.0;
+    let days_from_j2000 = unix_days + TDB_MINUS_UTC_DAYS - J2000_UNIX_DAYS;
+    (w0_deg + deg_per_day * days_from_j2000)
+        .rem_euclid(360.0)
+        .to_radians()
+}
+
 /// A heliocentric Keplerian ellipse (ECLIPJ2000, angles in radians) with the
 /// body's mean anomaly on it at one instant. `position_au` is where the body
 /// is; `position_at_mean_anomaly_au` traces the whole ellipse for an orbit
@@ -987,6 +1009,12 @@ mod tests {
     use super::*;
 
     const EPS: f64 = 1e-10;
+
+    #[test]
+    fn earth_rotation_angle_matches_the_iau_sofa_reference() {
+        // SOFA's own check of `iauEra00`: MJD 54388.0 is 13 801 Unix days.
+        assert!((earth_rotation_angle_radians(13_801.0) - 0.402_283_724_002_815_8).abs() < 1e-9);
+    }
 
     #[test]
     fn kepler_solver_converges_for_circular_orbit() {

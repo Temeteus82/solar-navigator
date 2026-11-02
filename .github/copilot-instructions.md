@@ -9,7 +9,7 @@ clean, idiomatic Rust that future agents can extend with minimal context.
 - Rust 2024 edition · Bevy 0.20 ECS · bevy_egui · wgpu v30 (Metal/Vulkan/DX12)
 - `rust-spice` (optional `spice` Cargo feature) — NAIF CSPICE ephemerides
 - `reqwest` — NASA JPL Horizons HTTP queries
-- Custom WGSL shaders: atmosphere halo (`assets/shaders/planet_atmosphere.wesl`) and
+- Custom WESL shaders: atmosphere halo (`assets/shaders/planet_atmosphere.wesl`) and
   Saturn's ring shadow (`assets/shaders/planet_ring.wesl`)
 
 ## Architecture
@@ -19,14 +19,16 @@ src/
   ephemeris.rs     — SpiceEphemeris + Horizons client (pure Rust, no Bevy)
   app/
     mod.rs         — Bevy App construction and system registration
-    types.rs       — Resources, Components, BODIES array (18 solar-system bodies)
+    types.rs       — Resources, Components, BODIES array (19 bodies, including Voyager 1)
     setup.rs       — Startup: scene spawn, textures, Horizons sync task
-    simulation.rs  — Update: keyboard, time advance, body positions, spin
+    simulation.rs  — Update: keyboard, time advance, body positions, date-based orientation
     camera.rs      — Update: orbit + free-fly cameras (F toggles), fly-to animation, body tracking
     render.rs      — Update: solar lighting, visibility toggles, window title
     asteroids.rs   — Update: procedural asteroid belt (Keplerian swarm)
-    materials.rs   — PlanetAtmosphereMaterial + PlanetRingMaterial (custom Bevy Material + WGSL)
-    ui.rs          — egui side panel (target search, sim controls, body list)
+    materials.rs   — PlanetAtmosphereMaterial + PlanetRingMaterial (custom Bevy Material + WESL)
+    ui.rs          — egui side panel (target selector, sim controls, display options)
+    theme.rs       — egui panel styling
+    raytracing.rs  — experimental Solari lighting (`--features raytracing`)
     util.rs        — asset resolution, cubemap conversion, format helpers
 ```
 
@@ -38,7 +40,8 @@ src/
 - `BODIES` in `types.rs` is the single source of truth for all rendered bodies.
 - Coordinate remap: SPICE Z → Bevy Y; negate SPICE Y → Bevy Z (right-handed).
 - AU scale: `AU_TO_SCENE_UNITS = 250.0` (constant, no runtime switching).
-- Body visual radii are ~15× physical size so they are visible at solar-system scale.
+- Bodies draw at physical radius by default; the True-scale toggle switches to `visual_radius`
+  (~15× physical), so size anything off a body's radius via `types.rs:drawn_size_factor`.
 - Solar lighting: DirectionalLight `sky_fill` (1800 lux, shadows on) re-aimed each frame
   from the Sun toward the camera focus so every body is evenly lit; PointLight `solar_key`
   dimmed to 80 MW with shadows off (specular/bloom near the Sun only); ambient 0.25.
@@ -49,8 +52,8 @@ src/
 ## Quality Gate (run before every commit)
 ```bash
 cargo fmt --check
-cargo check --all-targets && cargo check --all-targets --no-default-features
-cargo clippy --all-targets -- -D warnings
-cargo clippy --all-targets --no-default-features -- -D warnings
-cargo test --all-targets --no-default-features
+cargo check --locked --all-targets && cargo check --locked --all-targets --no-default-features
+cargo clippy --locked --all-targets -- -D warnings
+cargo clippy --locked --all-targets --no-default-features -- -D warnings
+cargo test --locked --all-targets && cargo test --locked --all-targets --no-default-features
 ```

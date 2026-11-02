@@ -94,11 +94,13 @@ you see neither its output nor its exit code.
 ./scripts/setup_cspice_linux_x86_64.sh
 ./scripts/download_spice_kernels.sh
 ./scripts/download_textures_solar_system_scope.sh
+./scripts/download_textures_minor_bodies_science.sh
 
 # macOS (arm64)
 ./scripts/setup_cspice_macos_arm64.sh
 ./scripts/download_spice_kernels.sh
 ./scripts/download_textures_solar_system_scope.sh
+./scripts/download_textures_minor_bodies_science.sh
 ```
 
 ```powershell
@@ -125,8 +127,10 @@ src/
     camera.rs        — Update systems: orbit + free-fly cameras, mode toggle (F), jump/fly-to, tracking
     render.rs        — Update systems: lighting presets, visibility, window title
     asteroids.rs     — Procedural asteroid belt: Keplerian swarm spawn + per-frame update
-    materials.rs     — PlanetAtmosphereMaterial + PlanetRingMaterial (custom Bevy Materials, WGSL)
+    materials.rs     — PlanetAtmosphereMaterial + PlanetRingMaterial (custom Bevy Materials, WESL)
     ui.rs            — egui side panel (EguiPrimaryContextPass schedule)
+    theme.rs         — egui panel styling
+    raytracing.rs    — experimental Solari lighting (`--features raytracing`; see docs/raytracing-notes.md)
     util.rs          — asset resolution, image/starfield helpers, format_simulation_speed
 ```
 
@@ -134,14 +138,16 @@ src/
 
 The `spice` Cargo feature (on by default) gates all CSPICE integration with `#[cfg(feature = "spice")]`. Both code paths must compile and be correct:
 
-- **SPICE mode**: loads NAIF kernels from `assets/spice/`, uses `rust-spice` for accurate ephemerides. Bodies not covered by the loaded kernels (Ceres, Vesta, Charon) silently fall back to analytic orbits.
-- **Fallback/portable mode**: analytic Keplerian ellipses defined in `ephemeris.rs:orbit_for_target`. No native library needed.
+- **SPICE mode**: loads NAIF kernels from `assets/spice/`, uses `rust-spice` for accurate ephemerides. Bodies not covered by the loaded kernels fall back: Ceres and Vesta to real Keplerian elements, Charon and the Galilean moons to reconstructed orbits around their primary. Dates outside the kernel's 1849-2150 coverage use the analytic orbits.
+- **Fallback/portable mode**: analytic positions on real dates (`ephemeris.rs:planet_mean_elements`, `minor_body_elements`, entered through `fallback_position_au`); moons orbit their primary on circles with arbitrary phase. No native library needed.
 
 `SpiceEphemeris` is stored as `NonSend` (`EphemerisResource`) because the SPICE lock (`Mutex<SpiceLock>`) must not be sent across threads.
 
 ### BODIES array and BodySpec
 
-`types.rs:BODIES` is the canonical static array of all 18 rendered solar-system bodies. Every body's display name, SPICE target string, visual radius, texture filename, PBR parameters, spin rate, and atmosphere config live here. Body index is the stable identifier used everywhere (queries, positions vec, camera targeting).
+`types.rs:BODIES` is the canonical static array of all 19 rendered bodies (18 natural bodies plus the Voyager 1 probe). Every body's display name, SPICE target string, visual radius, texture filename, PBR parameters, rotation, and atmosphere config live here. Body index is the stable identifier used everywhere (queries, positions vec, camera targeting).
+
+Globes are oriented from the absolute date by `simulation.rs:body_rotation`, from each body's IAU pole (`pole_ra_dec_deg`), `SpinModel` (`Iau` values from `assets/spice/pck00011.tpc`, `EarthRotationAngle`, or `LockedTo` a primary) and `MapLayout`. Published maps differ in centre longitude and orientation, so check each new map; see `assets/textures/README.md`.
 
 ### Coordinate remapping
 
@@ -180,8 +186,10 @@ lit hemisphere of the inspected body facing the viewer. The solar **PointLight**
 (`solar_key`) is dimmed to 80 MW with shadows disabled — it only adds inner-system specular
 highlights and bloom near the Sun. A low ambient (0.25) lifts the night side. The
 `MainCamera` carries post-processing (`AutoExposure`, `Bloom`, SSAO) that shapes the final
-image. Body visual radii are ~15× their physical size so they are visible at solar-system
-scale without being artificially huge.
+image. Bodies are drawn at their physical radius by default; the panel's **True-scale bodies**
+toggle (`RenderSettings::true_scale`) switches to `visual_radius`, ~15× physical size, so they
+read at solar-system scale. Anything sized off a body's radius must go through
+`types.rs:drawn_size_factor`.
 
 ### Asset resolution order
 
@@ -215,5 +223,5 @@ textures upload correctly and to profile the render pipeline.
 
 - All internal `app/` types are `pub(super)` — nothing leaks out of the `app` module.
 - Bevy resources are defined in `types.rs`; systems live in the module that owns them.
-- Adding a new solar-system body requires only a new `BodySpec` entry in `BODIES` and, for SPICE, a mapping in `ephemeris.rs:horizons_command_for_target` and `spice_supports_target`.
+- Adding a new solar-system body requires only a new `BodySpec` entry in `BODIES` (take its pole and `W` from `pck00011.tpc`, and check the map's layout) and, for SPICE, a mapping in `ephemeris.rs:horizons_command_for_target` and `spice_supports_target`.
 - Both feature flag variants (`--features spice` and `--no-default-features`) must pass `cargo check`, `clippy -D warnings`, and `cargo test` cleanly — CI enforces this on every push.

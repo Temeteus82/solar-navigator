@@ -191,8 +191,10 @@ src/
     camera.rs        — Update systems: orbit + free-fly cameras, mode toggle (F), jump/fly-to, tracking
     render.rs        — Update systems: lighting presets, visibility, window title
     asteroids.rs     — Procedural asteroid belt: Keplerian swarm spawn + per-frame update
-    materials.rs     — PlanetAtmosphereMaterial + PlanetRingMaterial (custom Bevy Materials, WGSL)
+    materials.rs     — PlanetAtmosphereMaterial + PlanetRingMaterial (custom Bevy Materials, WESL)
     ui.rs            — egui side panel (EguiPrimaryContextPass schedule)
+    theme.rs         — egui panel styling
+    raytracing.rs    — experimental Solari lighting (`--features raytracing`; see docs/raytracing-notes.md)
     util.rs          — asset resolution, image/starfield helpers, format_simulation_speed
 ```
 
@@ -209,9 +211,15 @@ There is one launch instant: `SpiceEphemeris::start_utc()`, read once at constru
 
 ### BODIES array and BodySpec
 
-`types.rs:BODIES` is the canonical static array of all 19 rendered bodies (18 natural bodies plus the Voyager 1 probe). Every body's display name, SPICE target string, visual radius, texture filename, PBR parameters, spin rate, and atmosphere config live here. Body index is the stable identifier used everywhere (queries, positions vec, camera targeting).
+`types.rs:BODIES` is the canonical static array of all 19 rendered bodies (18 natural bodies plus the Voyager 1 probe). Every body's display name, SPICE target string, visual radius, texture filename, PBR parameters, rotation (pole, spin model, map layout), and atmosphere config live here. Body index is the stable identifier used everywhere (queries, positions vec, camera targeting).
 
-`spin_radians_per_second` is right-handed about `pole_direction`: positive spins the surface counter-clockwise seen from the pole tip, which with the default ecliptic pole is the prograde sense the planets orbit in (Venus and Uranus are negative). A body with its own pole lists the IAU positive pole, so Pluto and Charon stay positive and Charon's orbit runs the same way about that pole. `simulation.rs:spin_angle_radians` turns the rate into a phase from the absolute simulation time (so a date jump turns the globe with the clock, and the result does not depend on frame history); the tests there check both senses against the actual `Transform` maths, so don't add a sign flip to "fix" a visual impression without updating them. Saturn's rings lie in the equatorial plane of its `pole_direction` (`types.rs:ring_rotation`), the same pole it spins about.
+Every globe's orientation is a function of the absolute date (`simulation.rs:body_rotation`), never of time since launch, so a date always shows the same face and a date jump turns the globe with the clock. Three fields drive it, with values from `assets/spice/pck00011.tpc`:
+
+- `pole_ra_dec_deg`: the IAU north pole, J2000 equatorial. `BodySpec::pole_scene` converts it; `types.rs:pole_rotation` stands the mesh's +Z on it with +X on the equator's node, and Saturn's rings lie in its equatorial plane (`types.rs:ring_rotation`). Venus and Uranus spin left-handed about their IAU pole (negative rate); Pluto's and Charon's pole is the right-hand-rule one, so Charon's orbit runs the same way about it.
+- `spin` (`SpinModel`), giving the prime-meridian angle `W`: `Iau` is the kernel's `w0 + rate x d` in TDB days; `EarthRotationAngle` is `ephemeris.rs:earth_rotation_angle_radians`, so Earth's subsolar point is the real one for the displayed UTC; `LockedTo` turns longitude 0 to a primary geometrically, for the Moon, the Galilean moons, Pluto and Charon. Locking is deliberately not the kernel's `W`: those orbits can have an arbitrary phase (always for the reconstructed moons, in portable mode for the Moon), which a real rotation model wouldn't face. The cost is no lunar libration.
+- `map` (`MapLayout`): where the texture's longitudes are. Published maps differ, so **check every new map**: Moon, Mars, Mercury, Io and Charon are centred on 0°; Ceres, Pluto, Europa, Ganymede and Callisto on 180° (their GeoTIFFs' `CenterLong` key confirms it); Solar System Scope's Venus is rotated half a turn with south up. Vesta's 0° is **unverified**: only its `.ktx2` is on the dev machine, and Dawn's Vesta products use more than one longitude system. See `assets/textures/README.md`.
+
+`SpinModel::Iau` uses only constant and linear terms, not the kernel's periodic ones. The largest of those, Mars's, change over centuries and are folded into its constants at their present values. `simulation.rs:body_frames_match_cspice` holds the frames CSPICE's `pxform` returns (within 1°: Neptune's pole is the worst, at 0.5°), stored as data because CSPICE allows one lock per process, and the tests there check both spin senses against the actual `Transform` maths, so don't add a sign flip to "fix" a visual impression without updating them. Earth's pole and the other poles ignore precession, so accuracy falls slowly away from J2000. `simulation.rs:spin_angle_radians` remains for what has no surface longitudes: Venus's cloud shell and the asteroid swarm.
 
 Charon and the Galilean moons are *reconstructed*: `update_body_positions` skips them in the ephemeris pass and `apply_*` places them from their primary's scene position with `ephemeris::satellite_offset_au`, the one satellite rule (also used for the Moon in portable mode), phased on absolute Unix days. The ephemeris reports the origin for them, and the Horizons sync skips them (`simulation.rs:RECONSTRUCTED_TARGETS`).
 
@@ -260,7 +268,7 @@ Rules that follow from it:
   the `Update` schedule in `mod.rs`). That system is NonSend and waits for the main thread,
   so an unordered reader can run first on a worker thread and use last frame's positions —
   at the 100 000× speed cap an atmosphere halo would trail its planet by half a radius.
-- **The Sun is not at the render origin.** The custom WGSL shaders receive its render-space
+- **The Sun is not at the render origin.** The custom WESL shaders receive its render-space
   position in a `sun_position` uniform (`render.rs:sync_shader_sun_positions`) rather
   than assuming `(0, 0, 0)`.
 - The sky sphere deliberately has no `WorldPosition`: left at the render origin, it is
@@ -410,5 +418,5 @@ only and drive no geometry.
 
 - All internal `app/` types are `pub(super)` — nothing leaks out of the `app` module.
 - Bevy resources are defined in `types.rs`; systems live in the module that owns them.
-- Adding a new solar-system body requires only a new `BodySpec` entry in `BODIES` and, for SPICE, a mapping in `ephemeris.rs:horizons_command_for_target` and `spice_supports_target`.
+- Adding a new solar-system body requires only a new `BodySpec` entry in `BODIES` (take its pole and `W` from `pck00011.tpc`, and check the map's layout) and, for SPICE, a mapping in `ephemeris.rs:horizons_command_for_target` and `spice_supports_target`.
 - Both feature flag variants (`--features spice` and `--no-default-features`) must pass `cargo check`, `clippy -D warnings`, and `cargo test` cleanly — CI enforces this on every push.
