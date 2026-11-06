@@ -139,6 +139,12 @@ Section "Install" SecMain
   SetOutPath "$INSTDIR\assets\icon"
   File /r "${STAGE_DIR}\icon\*.*"
 
+  ; Custom material shaders and glTF models (Voyager, asteroid rocks), loaded at runtime
+  SetOutPath "$INSTDIR\assets\shaders"
+  File /r "${STAGE_DIR}\shaders\*.*"
+  SetOutPath "$INSTDIR\assets\models"
+  File /r "${STAGE_DIR}\models\*.*"
+
   ; Texture download scripts (also kicked off in the background below)
   SetOutPath "$INSTDIR\scripts"
   File "${STAGE_DIR}\download_textures_solar_system_scope.ps1"

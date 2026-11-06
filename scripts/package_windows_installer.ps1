@@ -76,10 +76,11 @@ if (-not (Test-Path $cargoTarget)) { throw "SPICE build did not produce $cargoTa
 Copy-Item $cargoTarget (Join-Path $stageDir 'solar-navigator-spice.exe') -Force
 
 # --- 3. Stage non-binary payload -----------------------------------------
-Write-Host '[3/5] Staging icon, kernels, and texture download scripts'
+Write-Host '[3/5] Staging icon, shaders, models, kernels, and texture download scripts'
 
-$iconStage = Join-Path $stageDir 'icon'
-Copy-Item (Join-Path $projectRoot 'assets/icon') $iconStage -Recurse
+foreach ($dir in 'icon', 'shaders', 'models') {
+    Copy-Item (Join-Path $projectRoot "assets/$dir") (Join-Path $stageDir $dir) -Recurse
+}
 
 $spiceSource = Join-Path $projectRoot 'assets/spice'
 $kernelStage = Join-Path $stageDir 'spice-kernels'
