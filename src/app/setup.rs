@@ -255,6 +255,7 @@ pub(super) fn setup_scene(
                 ),
                 // Set every frame by `sync_shader_sun_positions`.
                 sun_position: Vec4::ZERO,
+                shell: Vec4::new((1.0 - spec.atmosphere_scale.powi(-2)).sqrt(), 0.0, 0.0, 0.0),
             });
 
             commands.spawn((

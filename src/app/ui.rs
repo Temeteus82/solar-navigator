@@ -226,7 +226,8 @@ pub(super) fn draw_side_panel(
                             ui.checkbox(&mut render_settings.asteroids_enabled, "Asteroid belt");
                             ui.checkbox(&mut render_settings.true_scale, "True-scale bodies")
                                 .on_hover_text(
-                                    "Draw bodies at their real size, so moons sit at their real                                      distance in planet radii. Voyager 1 keeps its display size.",
+                                    "Draw bodies at their real size, so moons sit at their real \
+                                     distance in planet radii. Voyager 1 keeps its display size.",
                                 );
                         });
 

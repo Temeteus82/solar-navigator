@@ -1,8 +1,8 @@
 use super::types::{
-    BODIES, BodyRuntime, CameraFlight, CameraMode, FREE_CAMERA_BOOST_MULTIPLIER,
-    FREE_CAMERA_LOOK_SENSITIVITY, FREE_CAMERA_MAX_SPEED, FREE_CAMERA_MIN_SPEED,
-    FREE_CAMERA_SPEED_FACTOR, MainCamera, ORBIT_KEY_ROTATE_SPEED, ORBIT_KEY_ZOOM_RATE,
-    OrbitCameraState, RenderOrigin, RenderSettings, SimulationState, drawn_size_factor,
+    BODIES, BodyRuntime, CameraMode, FREE_CAMERA_BOOST_MULTIPLIER, FREE_CAMERA_LOOK_SENSITIVITY,
+    FREE_CAMERA_MAX_SPEED, FREE_CAMERA_MIN_SPEED, FREE_CAMERA_SPEED_FACTOR, MainCamera,
+    ORBIT_KEY_ROTATE_SPEED, ORBIT_KEY_ZOOM_RATE, OrbitCameraState, RenderOrigin, RenderSettings,
+    SimulationState, drawn_size_factor,
 };
 use bevy::math::DVec3;
 use bevy::prelude::*;
@@ -46,11 +46,6 @@ pub(super) fn handle_jump_requests(
         }
     }
     orbit_camera.distance = target_distance;
-
-    orbit_camera.flight = Some(CameraFlight {
-        target_index,
-        target_distance,
-    });
 }
 
 /// `F` toggles between the orbit and free-fly cameras. Both directions hand
@@ -97,7 +92,6 @@ pub(super) fn toggle_camera_mode_impl(
             orbit_camera.free_position = position;
             orbit_camera.free_yaw = yaw;
             orbit_camera.free_pitch = pitch;
-            orbit_camera.flight = None;
             orbit_camera.mode = CameraMode::Free;
         }
         CameraMode::Free => {
@@ -122,7 +116,6 @@ pub(super) fn toggle_camera_mode_impl(
                 orbit_camera.pitch = pitch.clamp(MIN_PITCH, MAX_PITCH);
                 simulation_state.selected_body_index = Some(index);
             }
-            orbit_camera.flight = None;
             orbit_camera.mode = CameraMode::Orbit;
         }
     }
@@ -156,8 +149,6 @@ pub(super) fn orbit_camera_input(
     // the keyboard so typing in the side panel never drives the camera.
     if !egui_input.wants_any_keyboard_input() {
         let dt = time.delta_secs();
-        let mut keyboard_override = false;
-
         let mut yaw_delta = 0.0;
         let mut pitch_delta = 0.0;
         if keyboard.pressed(KeyCode::KeyA) {
@@ -175,7 +166,6 @@ pub(super) fn orbit_camera_input(
         if keyboard.any_pressed([KeyCode::KeyA, KeyCode::KeyD, KeyCode::KeyW, KeyCode::KeyS]) {
             orbit_camera.yaw += yaw_delta;
             orbit_camera.pitch = (orbit_camera.pitch + pitch_delta).clamp(MIN_PITCH, MAX_PITCH);
-            keyboard_override = true;
         }
 
         // Q zooms out, E zooms in.
@@ -190,11 +180,6 @@ pub(super) fn orbit_camera_input(
             let zoom_factor = (1.0 + zoom_dir * ORBIT_KEY_ZOOM_RATE * dt).clamp(0.2, 5.0);
             orbit_camera.distance =
                 (orbit_camera.distance * zoom_factor).clamp(min_distance, max_distance);
-            keyboard_override = true;
-        }
-
-        if keyboard_override {
-            orbit_camera.flight = None;
         }
     }
 
@@ -202,7 +187,6 @@ pub(super) fn orbit_camera_input(
         return;
     }
 
-    let mut user_override = false;
     let delta = mouse_motion.delta;
     let shift_held = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
 
@@ -213,7 +197,6 @@ pub(super) fn orbit_camera_input(
         orbit_camera.yaw -= delta.x * 0.004;
         orbit_camera.pitch -= delta.y * 0.003;
         orbit_camera.pitch = orbit_camera.pitch.clamp(MIN_PITCH, MAX_PITCH);
-        user_override = true;
     }
 
     if shift_held && mouse_buttons.pressed(MouseButton::Left) && delta.length_squared() > 0.01 {
@@ -231,7 +214,6 @@ pub(super) fn orbit_camera_input(
         // Remember the pan relative to the tracked body, or
         // `track_selected_body` would lerp the pivot straight back onto it.
         orbit_camera.pan_offset += pan;
-        user_override = true;
     }
 
     let mut zoom_steps = 0.0_f32;
@@ -242,15 +224,10 @@ pub(super) fn orbit_camera_input(
         };
     }
 
-    if zoom_steps.abs() > 0.12 {
+    if zoom_steps != 0.0 {
         let zoom_factor = (1.0 - zoom_steps * 0.12).clamp(0.2, 5.0);
         orbit_camera.distance =
             (orbit_camera.distance * zoom_factor).clamp(min_distance, max_distance);
-        user_override = true;
-    }
-
-    if user_override {
-        orbit_camera.flight = None;
     }
 }
 
@@ -331,7 +308,6 @@ pub(super) fn free_camera_input(
 }
 
 pub(super) fn track_selected_body(
-    time: Res<Time>,
     simulation_state: Res<SimulationState>,
     body_runtime: Res<BodyRuntime>,
     mut orbit_camera: ResMut<OrbitCameraState>,
@@ -340,10 +316,6 @@ pub(super) fn track_selected_body(
     if orbit_camera.mode != CameraMode::Orbit {
         return;
     }
-    if orbit_camera.flight.is_some() {
-        return;
-    }
-
     let Some(selected_index) = simulation_state.selected_body_index else {
         return;
     };
@@ -352,44 +324,10 @@ pub(super) fn track_selected_body(
         return;
     };
 
-    // Follow the body, offset by however far the user has panned from it.
-    let desired = target_position + orbit_camera.pan_offset;
-    orbit_camera.target =
-        tracked_target_after_step(orbit_camera.target, desired, time.delta_secs());
-}
-
-pub(super) fn apply_camera_flight(
-    time: Res<Time>,
-    body_runtime: Res<BodyRuntime>,
-    mut orbit_camera: ResMut<OrbitCameraState>,
-) {
-    if orbit_camera.mode != CameraMode::Orbit {
-        return;
-    }
-
-    let Some(flight) = orbit_camera.flight else {
-        return;
-    };
-
-    let Some(&target_at) = body_runtime.positions.get(flight.target_index) else {
-        orbit_camera.flight = None;
-        return;
-    };
-
-    let dt = time.delta_secs();
-    let at_lerp = 1.0 - (-4.0 * dt).exp();
-    let dist_lerp = 1.0 - (-3.0 * dt).exp();
-
-    orbit_camera.target = orbit_camera.target.lerp(target_at, f64::from(at_lerp));
-    orbit_camera.distance += (flight.target_distance - orbit_camera.distance) * dist_lerp;
-
-    // Relative distance tolerance: a true-scale moon's whole target distance
-    // can be under an absolute 0.05, which would end the flight far short.
-    if orbit_camera.target.distance(target_at) < 0.05
-        && (orbit_camera.distance - flight.target_distance).abs() < flight.target_distance * 0.05
-    {
-        orbit_camera.flight = None;
-    }
+    // Follow the body exactly, offset by however far the user has panned from
+    // it. Easing toward it instead trails a fast-moving body by a fixed
+    // fraction of its speed, which at high simulation rates is off screen.
+    orbit_camera.target = target_position + orbit_camera.pan_offset;
 }
 
 /// Builds the camera's final pose and makes its world position the floating
@@ -519,6 +457,11 @@ fn parent_body_index(index: usize) -> Option<usize> {
 fn orient_camera_toward_sunward(orbit_camera: &mut OrbitCameraState, target_position: Vec3) {
     // When jumping to a planet, place the camera toward the Sun side so
     // the textured day hemisphere is visible instead of a black night side.
+    // The Sun itself has no sunward side: keep the current view angle rather
+    // than let the elevation bias alone turn it into a straight-down one.
+    if target_position.length_squared() < 1e-6 {
+        return;
+    }
     orient_camera_toward_direction(orbit_camera, -target_position);
 }
 
@@ -608,11 +551,6 @@ fn set_orbit_angles(orbit_camera: &mut OrbitCameraState, direction: Vec3) {
     }
 }
 
-fn tracked_target_after_step(current: DVec3, desired: DVec3, delta_seconds: f32) -> DVec3 {
-    let lerp_factor = 1.0 - (-8.0 * f64::from(delta_seconds)).exp();
-    current.lerp(desired, lerp_factor)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -700,7 +638,6 @@ mod tests {
             max_distance: 100.0,
             target: DVec3::ZERO,
             pan_offset: DVec3::ZERO,
-            flight: None,
             free_position: DVec3::ZERO,
             free_yaw: 0.0,
             free_pitch: 0.0,
@@ -711,6 +648,27 @@ mod tests {
         assert!(camera.yaw.is_finite());
         assert!(camera.pitch.is_finite());
         assert!((MIN_PITCH..=MAX_PITCH).contains(&camera.pitch));
+    }
+
+    #[test]
+    fn orient_camera_toward_sunward_keeps_the_view_when_the_target_is_the_sun() {
+        let mut camera = OrbitCameraState {
+            mode: CameraMode::Orbit,
+            yaw: 1.0,
+            pitch: 0.3,
+            distance: 10.0,
+            min_distance: 1.0,
+            max_distance: 100.0,
+            target: DVec3::ZERO,
+            pan_offset: DVec3::ZERO,
+            free_position: DVec3::ZERO,
+            free_yaw: 0.0,
+            free_pitch: 0.0,
+        };
+
+        orient_camera_toward_sunward(&mut camera, Vec3::ZERO);
+
+        assert_eq!((camera.yaw, camera.pitch), (1.0, 0.3));
     }
 
     #[test]
@@ -769,7 +727,6 @@ mod tests {
             max_distance: 100.0,
             target: moon_position.as_dvec3(),
             pan_offset: DVec3::ZERO,
-            flight: None,
             free_position: DVec3::ZERO,
             free_yaw: 0.0,
             free_pitch: 0.0,
@@ -789,25 +746,6 @@ mod tests {
         assert!(
             to_moon.dot(to_planet) > 0.99,
             "expected planet roughly behind the moon in view, to_moon={to_moon:?} to_planet={to_planet:?}"
-        );
-    }
-
-    #[test]
-    fn tracked_target_after_step_moves_toward_desired_target() {
-        let current = DVec3::new(0.0, 0.0, 0.0);
-        let desired = DVec3::new(10.0, -2.0, 4.0);
-        let next = tracked_target_after_step(current, desired, 0.1);
-
-        assert!(next.distance(current) > 0.0);
-        assert!(next.distance(desired) < current.distance(desired));
-    }
-
-    #[test]
-    fn tracked_target_after_step_reaches_desired_on_large_delta() {
-        let desired = DVec3::new(10.0, -2.0, 4.0);
-        assert_eq!(
-            tracked_target_after_step(DVec3::ZERO, desired, 100.0),
-            desired
         );
     }
 

@@ -18,6 +18,12 @@ pub(super) struct PlanetAtmosphereMaterial {
     /// `render::sync_shader_sun_positions`.
     #[uniform(2)]
     pub(super) sun_position: Vec4,
+    /// x = `-dot(normal, view)` where a ray grazing the planet's limb leaves
+    /// the shell, `sqrt(1 - 1/scale^2)` for a shell `scale` planet radii out
+    /// (the same from any viewing distance); yzw unused. The shader fades the
+    /// glow from there to the shell's silhouette.
+    #[uniform(3)]
+    pub(super) shell: Vec4,
 }
 
 impl Material for PlanetAtmosphereMaterial {

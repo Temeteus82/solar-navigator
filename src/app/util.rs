@@ -213,8 +213,11 @@ pub(super) fn equirectangular_to_cubemap_image(source: &Image, face_size: u32) -
                 let t = (2.0 * (y as f32 + 0.5) / face_size as f32) - 1.0;
                 let direction = cubemap_face_direction(face, s, t).normalize_or_zero();
 
-                let u = (0.5 + direction.z.atan2(direction.x) / (2.0 * PI)).rem_euclid(1.0);
-                let v = (0.5 - direction.y.asin() / PI).clamp(0.0, 1.0);
+                // Where the sky sphere (`sphere_mesh`, a Bevy UV sphere) draws
+                // this direction: u = 0 on +X growing about +Z, v = 0 at +Z.
+                // Any other layout lights the scene from a rotated sky.
+                let u = (direction.y.atan2(direction.x) / (2.0 * PI)).rem_euclid(1.0);
+                let v = (0.5 - direction.z.asin() / PI).clamp(0.0, 1.0);
 
                 let src_x = ((u * src_width as f32) as u32).min(src_width.saturating_sub(1));
                 let src_y = ((v * src_height as f32) as u32).min(src_height.saturating_sub(1));
@@ -516,6 +519,30 @@ mod tests {
                 .and_then(|descriptor| descriptor.dimension),
             Some(TextureViewDimension::Cube)
         );
+    }
+
+    #[test]
+    fn cubemap_poles_follow_the_sky_sphere() {
+        // Top map row red, bottom row blue: the sky sphere draws them at its
+        // +Z and -Z poles, so those cube faces (layers 4 and 5) must match.
+        let source = Image::new(
+            Extent3d {
+                width: 2,
+                height: 2,
+                depth_or_array_layers: 1,
+            },
+            TextureDimension::D2,
+            vec![
+                255, 0, 0, 255, 255, 0, 0, 255, 0, 0, 255, 255, 0, 0, 255, 255,
+            ],
+            TextureFormat::Rgba8UnormSrgb,
+            RenderAssetUsages::default(),
+        );
+        let cubemap = equirectangular_to_cubemap_image(&source, 2).unwrap();
+        let data = cubemap.data.as_ref().unwrap();
+        let face = |layer: usize| &data[layer * 16..layer * 16 + 4];
+        assert_eq!(face(4), [255, 0, 0, 255]);
+        assert_eq!(face(5), [0, 0, 255, 255]);
     }
 
     #[test]
