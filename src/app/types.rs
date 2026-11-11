@@ -473,18 +473,11 @@ pub(super) struct OrbitCameraState {
     /// shift-drag pan holds instead of being lerped back onto the body;
     /// jumping to or re-tethering on a body zeroes it.
     pub(super) pan_offset: DVec3,
-    pub(super) flight: Option<CameraFlight>,
     // Free-camera state: world-space position and look angles. Seeded from the
     // orbit camera on entering Free mode so the handoff is seamless.
     pub(super) free_position: DVec3,
     pub(super) free_yaw: f32,
     pub(super) free_pitch: f32,
-}
-
-#[derive(Clone, Copy)]
-pub(super) struct CameraFlight {
-    pub(super) target_index: usize,
-    pub(super) target_distance: f32,
 }
 
 #[derive(Component)]

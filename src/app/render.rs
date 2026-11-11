@@ -3,10 +3,12 @@ use super::materials::{PlanetAtmosphereMaterial, PlanetRingMaterial};
 use super::types::{
     AU_TO_SCENE_UNITS, AppStatus, AtmosphereLayer, BODIES, BodyRuntime, BodyTrails, CameraMode,
     EphemerisResource, LightingRig, MAX_FRAME_RATE, MainCamera, OrbitCameraState, PlanetRing,
-    RenderOrigin, RenderSettings, SimulationState, StarsBackdrop, TRAIL_MAX_POINTS, WorldPosition,
+    RenderOrigin, RenderSettings, SIDE_PANEL_WIDTH_PX, SimulationState, StarsBackdrop,
+    TRAIL_MAX_POINTS, WorldPosition,
 };
 use super::util::{eclipj2000_to_scene, format_simulation_speed};
 use crate::ephemeris::heliocentric_orbit;
+use bevy::camera::Viewport;
 use bevy::light::{CascadeShadowConfig, CascadeShadowConfigBuilder};
 use bevy::math::DVec3;
 use bevy::pbr::{ContactShadows, ScreenSpaceAmbientOcclusion};
@@ -371,10 +373,13 @@ pub(super) fn draw_orbit_paths(
         let alpha = if is_selected { 0.55 } else { 0.12 };
         let color = Color::srgba(spec.color[0], spec.color[1], spec.color[2], alpha);
         // Feed the ring points straight into the gizmo iterator instead of
-        // collecting into a per-frame Vec for every body.
+        // collecting into a per-frame Vec for every body. The ring starts at
+        // the body's own mean anomaly, so a vertex sits on the body: a chord
+        // between two others passes up to ~1 unit inside Neptune's ellipse.
         gizmos.linestrip(
             (0..=ORBIT_PATH_SEGMENTS).map(|i| {
-                let mean_anomaly = f64::from(i) / f64::from(ORBIT_PATH_SEGMENTS) * TAU;
+                let mean_anomaly =
+                    orbit.mean_anomaly + f64::from(i) / f64::from(ORBIT_PATH_SEGMENTS) * TAU;
                 render_space(
                     eclipj2000_to_scene(
                         orbit.position_at_mean_anomaly_au(mean_anomaly),
@@ -385,6 +390,41 @@ pub(super) fn draw_orbit_paths(
             }),
             color,
         );
+    }
+}
+
+/// Restricts the 3D view to the window area right of the side panel, so the
+/// camera's subject is centred in what is visible instead of sitting left of
+/// centre, partly behind the panel. The panel is opaque and drawn by its own
+/// camera (`setup.rs:setup_scene`), so nothing shows through where this one
+/// no longer renders.
+pub(super) fn fit_viewport_beside_panel(
+    windows: Query<&Window, With<PrimaryWindow>>,
+    mut cameras: Query<&mut Camera, With<MainCamera>>,
+) {
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    let panel = (SIDE_PANEL_WIDTH_PX * window.scale_factor()).round() as u32;
+    let size = window.physical_size();
+    // Minimised, or narrower than the panel: there is no area to fit.
+    if size.x <= panel || size.y == 0 {
+        return;
+    }
+    let (position, size) = (UVec2::new(panel, 0), UVec2::new(size.x - panel, size.y));
+    for mut camera in &mut cameras {
+        // Compare before writing: a write marks the camera changed.
+        let current = camera
+            .viewport
+            .as_ref()
+            .map(|viewport| (viewport.physical_position, viewport.physical_size));
+        if current != Some((position, size)) {
+            camera.viewport = Some(Viewport {
+                physical_position: position,
+                physical_size: size,
+                ..default()
+            });
+        }
     }
 }
 

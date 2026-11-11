@@ -63,7 +63,6 @@ pub(super) fn keyboard_controls(
         simulation_state.selected_body_index = None;
         simulation_state.jump_request = None;
         orbit_camera.mode = CameraMode::Orbit;
-        orbit_camera.flight = None;
         orbit_camera.target = DVec3::ZERO;
         orbit_camera.pan_offset = DVec3::ZERO;
         orbit_camera.distance = 188.3;
@@ -401,13 +400,10 @@ pub(super) fn apply_body_scale(
         }
     }
 
-    if orbit_camera.mode == CameraMode::Orbit {
-        if let Some(index) = simulation_state.selected_body_index {
-            orbit_camera.distance *= ratio(&BODIES[index]);
-        }
-        if let Some(flight) = orbit_camera.flight.as_mut() {
-            flight.target_distance *= ratio(&BODIES[flight.target_index]);
-        }
+    if orbit_camera.mode == CameraMode::Orbit
+        && let Some(index) = simulation_state.selected_body_index
+    {
+        orbit_camera.distance *= ratio(&BODIES[index]);
     }
 }
 

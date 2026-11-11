@@ -188,7 +188,7 @@ src/
     types.rs         — every Resource, Component, and the BODIES constant array
     setup.rs         — Startup systems: scene spawn, texture loading, Horizons sync task
     simulation.rs    — Update systems: keyboard input, time advance, body positions
-    camera.rs        — Update systems: orbit + free-fly cameras, mode toggle (F), jump/fly-to, tracking
+    camera.rs        — Update systems: orbit + free-fly cameras, mode toggle (F), jump-to, tracking
     render.rs        — Update systems: lighting presets, visibility, window title
     asteroids.rs     — Procedural asteroid belt: Keplerian swarm spawn + per-frame update
     materials.rs     — PlanetAtmosphereMaterial + PlanetRingMaterial (custom Bevy Materials, WESL)
@@ -282,17 +282,19 @@ On startup (SPICE mode only), `setup::start_horizons_sync` spawns an async task 
 
 `OrbitCameraState::mode` (`CameraMode::Orbit | Free`) selects between two cameras; `F`
 toggles, and the egui panel exposes a button. **Orbit** (default) is the target-tethered
-inspection camera (drag to orbit, shift-drag to pan, scroll to zoom, click a body to
-fly-to and track). A pan is kept in `OrbitCameraState::pan_offset`, so tracking follows
-the body plus the pan instead of lerping the pivot back onto it; jumping to or
+inspection camera (drag to orbit, shift-drag to pan, scroll to zoom; picking a body in the
+panel's target list jumps to it and tracks it). A pan is kept in `OrbitCameraState::pan_offset`, so tracking follows
+the body plus the pan exactly, with no easing (easing trailed a fast body off screen); jumping to or
 re-tethering on a body zeroes it. **Free** is an untethered fly-cam: WASD to move, Q/E down/up, drag to
 look, Shift to boost. Free-cam speed auto-scales with the distance to the nearest body
 (`FREE_CAMERA_*` constants in `types.rs`) so the same controls work for close inspection
 and interplanetary travel. Mode-switches hand off seamlessly — entering Free seeds the
 fly-cam from the orbit pose; leaving re-tethers to the selected (or nearest) body without
-snapping the view. The orbit-only systems (`orbit_camera_input`, `track_selected_body`,
-`apply_camera_flight`) early-return when in Free mode, and `free_camera_input` is inert in
+snapping the view. The orbit-only systems (`orbit_camera_input`, `track_selected_body`) early-return when in Free mode, and `free_camera_input` is inert in
 Orbit mode. `update_camera_transform` branches on the mode to build the final transform.
+
+The main camera renders only the window area right of the side panel
+(`render.rs:fit_viewport_beside_panel`), so its subject is centred in the visible view.
 
 ### Lighting and AU scale
 
@@ -401,7 +403,7 @@ Custom shaders are **WESL** (`.wesl`): since Bevy 0.20 a `.wgsl` file goes to wg
 builds (one `failed to create shader module` error in the log). Write
 `import bevy_pbr::render::forward_io::VertexOutput;` and `@group(constants::MATERIAL_BIND_GROUP)`.
 
-`PlanetAtmosphereMaterial` (`materials.rs`) uses `assets/shaders/planet_atmosphere.wesl`. It is rendered front-face-culled with additive blending and no depth write, creating a limb-glow halo. The `params` uniform encodes `(density, rim_power, forward_phase_power, brightness)`.
+`PlanetAtmosphereMaterial` (`materials.rs`) uses `assets/shaders/planet_atmosphere.wesl`. It is rendered front-face-culled with additive blending and no depth write, creating a limb-glow halo. The `params` uniform encodes `(density, rim_power, forward_phase_power, brightness)`. Because only back faces are drawn, every visible normal points away from the viewer; the `shell` uniform carries the grazing-ray value the shader needs to fade the glow from the planet's limb out to the shell's edge.
 
 The orbit rings (`render.rs:draw_orbit_paths`) are the ellipses `ephemeris::heliocentric_orbit`
 returns for each body on the current date, so each ring passes through its body; the

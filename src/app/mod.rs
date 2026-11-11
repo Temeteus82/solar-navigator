@@ -32,15 +32,18 @@ use types::{
     RenderSettings, SimulationEpoch, SimulationState, TextureStatus,
 };
 
-/// Log file mirroring the terminal output, written to the working directory and
-/// overwritten on every run.
+/// Log file mirroring the terminal output, overwritten on every run. Written to
+/// the working directory, or to the temp directory when that is read-only (an
+/// install under Program Files, which also has no terminal to fall back on).
 const LOG_FILE_NAME: &str = "solar-navigator.log";
 
 /// `LogPlugin::custom_layer`: a second formatter that writes every event the
 /// terminal shows (same filter, no ANSI colours) to `LOG_FILE_NAME`. Panics and
 /// anything printed straight to stderr bypass it.
 fn log_file_layer(_app: &mut App) -> Option<BoxedLayer> {
-    let file = match std::fs::File::create(LOG_FILE_NAME) {
+    let file = std::fs::File::create(LOG_FILE_NAME)
+        .or_else(|_| std::fs::File::create(std::env::temp_dir().join(LOG_FILE_NAME)));
+    let file = match file {
         Ok(file) => file,
         Err(err) => {
             // The logger is what's being built, so stderr is all there is.
@@ -104,7 +107,6 @@ pub(crate) fn run() {
             max_distance: 30_000.0,
             target: DVec3::ZERO,
             pan_offset: DVec3::ZERO,
-            flight: None,
             free_position: DVec3::ZERO,
             free_yaw: 0.0,
             free_pitch: 0.0,
@@ -178,14 +180,13 @@ pub(crate) fn run() {
                     simulation::sync_ring_material_uniforms,
                     camera::toggle_camera_mode,
                     camera::free_camera_input,
-                    // A jump sets the flight and clears any pan; tracking
-                    // yields to a flight, and the flight itself is last.
+                    // A jump moves the camera and clears any pan before
+                    // tracking follows the body.
                     (
                         simulation::apply_body_scale,
                         camera::orbit_camera_input,
                         camera::handle_jump_requests,
                         camera::track_selected_body,
-                        camera::apply_camera_flight,
                     )
                         .chain(),
                 )
@@ -211,8 +212,7 @@ pub(crate) fn run() {
                     .after(camera::toggle_camera_mode)
                     .after(camera::orbit_camera_input)
                     .after(camera::free_camera_input)
-                    .after(camera::track_selected_body)
-                    .after(camera::apply_camera_flight),
+                    .after(camera::track_selected_body),
                 render::sync_shader_sun_positions.after(camera::update_camera_transform),
                 render::apply_lighting_preset,
                 render::scale_view_dependent_effects,
@@ -223,6 +223,7 @@ pub(crate) fn run() {
                     .after(camera::update_camera_transform)
                     .after(simulation::update_body_positions),
                 render::update_window_title,
+                render::fit_viewport_beside_panel,
             ),
         )
         .add_systems(
