@@ -56,7 +56,7 @@ impl Material for PlanetAtmosphereMaterial {
 }
 
 /// Custom planetary-ring material: samples a radial color/alpha strip and
-/// computes its own lighting in WGSL — Lambert + sigmoid terminator,
+/// computes its own lighting in WESL — Lambert + sigmoid terminator,
 /// cylindrical eclipse from the parent planet, plus forward / back scatter
 /// terms that capture the way real ring particles respond to the sun.
 ///

@@ -101,8 +101,8 @@ pub(crate) fn run() {
         .insert_resource(OrbitCameraState {
             mode: types::CameraMode::default(),
             yaw: PI,
-            pitch: (55.0_f32 / 188.3_f32).asin(),
-            distance: 188.3,
+            pitch: (55.0 / types::DEFAULT_ORBIT_DISTANCE).asin(),
+            distance: types::DEFAULT_ORBIT_DISTANCE,
             min_distance: 0.05,
             max_distance: 30_000.0,
             target: DVec3::ZERO,
