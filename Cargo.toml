@@ -6,7 +6,8 @@ license = "MIT"
 
 [features]
 default = ["spice"]
-spice = ["dep:rust-spice"]
+# The Horizons sync runs only in SPICE mode, so its HTTP stack is built only there.
+spice = ["dep:rust-spice", "dep:reqwest"]
 # Builds the `compress_textures` example (the offline BC7/ASTC encoder). `ctt`
 # compiles its C++ encoders with the system C++ compiler, so it stays out of
 # both app builds.
@@ -73,7 +74,7 @@ bevy_egui = { version = "0.43.1", default-features = false, features = [
 ] }
 chrono = { version = "0.4.42", default-features = false, features = ["clock", "std"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
-reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "query", "rustls"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "query", "rustls"], optional = true }
 winit = { version = "0.30", default-features = false }
 rust-spice = { version = "1.0.1", default-features = false, features = ["download", "lock"], optional = true }
 egui-phosphor = { version = "0.14.0", default-features = false, features = ["fill"] }

@@ -1,5 +1,4 @@
 use chrono::{DateTime, Utc};
-use reqwest::blocking::Client;
 #[cfg(feature = "spice")]
 use spice::SpiceLock;
 use std::f64::consts::TAU;
@@ -16,8 +15,18 @@ const MOON_SEMI_MAJOR_AXIS_KM: f64 = 384_400.0;
 const CHARON_SEMI_MAJOR_AXIS_KM: f64 = 19_591.0;
 #[cfg(feature = "spice")]
 const SPICE_REFERENCE_FRAME: &str = "ECLIPJ2000";
+#[cfg(feature = "spice")]
 const HORIZONS_API_URL: &str = "https://ssd.jpl.nasa.gov/api/horizons.api";
+#[cfg(feature = "spice")]
 const HORIZONS_CENTER: &str = "'500@10'";
+
+/// HTTP client for the Horizons sync. The sync runs only in SPICE mode, so the
+/// portable build carries no HTTP stack: its stand-in never sends anything.
+#[cfg(feature = "spice")]
+pub type HorizonsClient = reqwest::blocking::Client;
+#[cfg(not(feature = "spice"))]
+#[derive(Clone)]
+pub struct HorizonsClient;
 
 pub const VOYAGER_1_TARGET: &str = "VOYAGER 1";
 // Voyager 1 is not in the planetary kernels, so it always flies this linear
@@ -777,15 +786,31 @@ pub fn horizons_command_for_target(target: &str) -> Option<&'static str> {
     }
 }
 
-pub fn build_horizons_client(timeout: Duration) -> Result<Client, String> {
-    Client::builder()
+#[cfg(feature = "spice")]
+pub fn build_horizons_client(timeout: Duration) -> Result<HorizonsClient, String> {
+    HorizonsClient::builder()
         .timeout(timeout)
         .build()
         .map_err(|err| format!("could not build HTTP client: {err}"))
 }
 
+#[cfg(not(feature = "spice"))]
+pub fn build_horizons_client(_timeout: Duration) -> Result<HorizonsClient, String> {
+    Ok(HorizonsClient)
+}
+
+#[cfg(not(feature = "spice"))]
 pub fn fetch_horizons_heliocentric_position_au_with_client(
-    client: &Client,
+    _client: &HorizonsClient,
+    _command: &str,
+    _utc_time: &str,
+) -> Result<[f64; 3], String> {
+    Err("the portable build has no Horizons sync".to_string())
+}
+
+#[cfg(feature = "spice")]
+pub fn fetch_horizons_heliocentric_position_au_with_client(
+    client: &HorizonsClient,
     command: &str,
     utc_time: &str,
 ) -> Result<[f64; 3], String> {
@@ -832,6 +857,8 @@ pub fn fetch_horizons_heliocentric_position_au_with_client(
     parse_horizons_vector_row_au(&text)
 }
 
+// Only the SPICE build fetches; the portable build still tests the parser.
+#[cfg_attr(not(feature = "spice"), allow(dead_code))]
 fn parse_horizons_vector_row_au(raw: &str) -> Result<[f64; 3], String> {
     let mut in_data = false;
 

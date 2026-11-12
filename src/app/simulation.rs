@@ -3,7 +3,7 @@ use super::materials::PlanetRingMaterial;
 use super::types::{
     AU_TO_SCENE_UNITS, AtmosphereLayer, AtmosphereOf, BODIES, BodyEntity, BodyRuntime, BodySpec,
     BodyTrails, CLOUD_SUPERROTATION_RADIANS_PER_SECOND, CameraMode, CloudLayer, CloudOf,
-    EphemerisResource, HorizonsSyncState, MAX_SIMULATION_RATE_MULTIPLIER,
+    DEFAULT_ORBIT_DISTANCE, EphemerisResource, HorizonsSyncState, MAX_SIMULATION_RATE_MULTIPLIER,
     MIN_SIMULATION_RATE_MULTIPLIER, OrbitCameraState, PlanetRing, RenderSettings, RingOf,
     SECONDS_PER_DAY, SimulationState, SpinModel, WorldPosition, drawn_size_factor, pole_rotation,
 };
@@ -65,7 +65,7 @@ pub(super) fn keyboard_controls(
         orbit_camera.mode = CameraMode::Orbit;
         orbit_camera.target = DVec3::ZERO;
         orbit_camera.pan_offset = DVec3::ZERO;
-        orbit_camera.distance = 188.3;
+        orbit_camera.distance = DEFAULT_ORBIT_DISTANCE;
         trails.clear();
     }
 }
@@ -327,7 +327,7 @@ pub(super) fn sync_ring_positions(
 }
 
 /// Pushes the parent planet's current world-space (heliocentric) position
-/// into each ring material's `planet_position` uniform so the WGSL shader can
+/// into each ring material's `planet_position` uniform so the WESL shader can
 /// compute the cylindrical eclipse cast by the planet onto the ring disc.
 pub(super) fn sync_ring_material_uniforms(
     body_runtime: Res<BodyRuntime>,

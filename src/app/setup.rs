@@ -12,7 +12,8 @@ use super::util::{
     resolve_texture_load_path, ring_mesh, spawn_fallback_starfield, sphere_mesh, white_pixel_image,
 };
 use crate::ephemeris::{
-    fetch_horizons_heliocentric_position_au_with_client, horizons_command_for_target,
+    HorizonsClient, fetch_horizons_heliocentric_position_au_with_client,
+    horizons_command_for_target,
 };
 use bevy::camera::CameraOutputMode;
 use bevy::camera::visibility::RenderLayers;
@@ -102,7 +103,8 @@ pub(super) fn setup_scene(
 
     // Egui's overlay pass and Bloom's PostProcess composite pass are both
     // only loosely ordered (`.after(EarlyPostProcess)`/`.in_set(PostProcess)`)
-    // against each other in Bevy 0.19's Core3d schedule, and empirically the
+    // against each other in the Core3d schedule (seen on Bevy 0.19 and not
+    // re-tested on 0.20), and empirically the
     // scheduler runs Bloom's view-target swap after egui's paint — silently
     // erasing the whole side panel. Give egui its own dedicated UI-only
     // camera (no world geometry, alpha-blended on top at a higher `order`)
@@ -124,36 +126,22 @@ pub(super) fn setup_scene(
         },
     ));
 
+    // Both lights get their intensity, colour, shadows and (for `sky_fill`)
+    // direction from `render.rs:apply_lighting_preset` every frame; only the
+    // point light's range is set here.
     let solar_key = commands
         .spawn((
             PointLight {
-                intensity: 1_600_000_000.0,
                 range: 14_000.0,
-                color: Color::srgb(1.0, 0.97, 0.9),
-                // Cast shadows so bodies occlude each other (eclipse geometry
-                // is visible when zoomed into the Earth–Moon or Pluto–Charon systems).
-                shadow_maps_enabled: true,
                 ..default()
             },
-            Transform::default(),
             // The Sun sits at the world origin, which is not the render
             // origin — `apply_render_origin` places it relative to the camera.
             WorldPosition::default(),
         ))
         .id();
 
-    let sky_fill = commands
-        .spawn((
-            DirectionalLight {
-                illuminance: 5.0,
-                color: Color::srgb(0.3, 0.35, 0.45),
-                shadow_maps_enabled: false,
-                ..default()
-            },
-            Transform::from_translation(Vec3::new(0.0, 1.0, 0.0))
-                .looking_to(Vec3::new(-0.2, -1.0, 0.25), Vec3::Y),
-        ))
-        .id();
+    let sky_fill = commands.spawn(DirectionalLight::default()).id();
 
     commands.insert_resource(LightingRig {
         solar_key,
@@ -445,8 +433,7 @@ pub(super) fn sync_environment_lighting_from_sky(
             .entity(camera_entity)
             .insert(GeneratedEnvironmentMapLight {
                 environment_map: cubemap_handle.clone(),
-                // Kept low so the solar key-light inverse-square falloff
-                // creates a realistic brightness gradient across the solar system.
+                // Kept low: the sky only faintly fills what the sun light misses.
                 intensity: 150.0,
                 rotation: Quat::IDENTITY,
                 affects_lightmapped_mesh_diffuse: true,
@@ -592,7 +579,7 @@ fn horizons_sync_skips_target(spice_target: &str) -> bool {
 fn queue_horizons_sync_task(
     app_status: &AppStatus,
     ephemeris: &EphemerisResource,
-    horizons_http_client: Option<&reqwest::blocking::Client>,
+    horizons_http_client: Option<&HorizonsClient>,
     horizons_sync: &mut HorizonsSyncState,
 ) -> bool {
     if !app_status.spice_enabled {
@@ -762,7 +749,7 @@ pub(super) fn refresh_texture_status(
 }
 
 fn run_horizons_sync_task(
-    client: reqwest::blocking::Client,
+    client: HorizonsClient,
     input: HorizonsSyncTaskInput,
 ) -> HorizonsSyncResult {
     let mut failures = input.initial_failures;
@@ -976,10 +963,8 @@ mod tests {
 
     #[test]
     fn run_horizons_sync_task_reports_unavailable_when_no_targets_validate() {
-        let client = reqwest::blocking::Client::builder()
-            .timeout(Duration::from_millis(10))
-            .build()
-            .expect("client");
+        let client =
+            crate::ephemeris::build_horizons_client(Duration::from_millis(10)).expect("client");
 
         let result = run_horizons_sync_task(
             client,

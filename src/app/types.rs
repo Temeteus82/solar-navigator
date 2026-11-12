@@ -1,10 +1,9 @@
 use super::util::eclipj2000_to_scene;
-use crate::ephemeris::SpiceEphemeris;
+use crate::ephemeris::{HorizonsClient, SpiceEphemeris};
 use bevy::math::DVec3;
 use bevy::prelude::*;
 use bevy::tasks::Task;
 use chrono::{DateTime, NaiveDate, Utc};
-use reqwest::blocking::Client;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -22,6 +21,9 @@ pub(super) const DEFAULT_SIMULATION_RATE_MULTIPLIER: f64 = 1.0;
 pub(super) const MIN_SIMULATION_RATE_MULTIPLIER: f64 = 0.01;
 pub(super) const MAX_SIMULATION_RATE_MULTIPLIER: f64 = 100_000.0;
 pub(super) const SIDE_PANEL_WIDTH_PX: f32 = 300.0;
+/// Orbit-camera distance at launch and after a Backspace reset: the whole
+/// inner system in view.
+pub(super) const DEFAULT_ORBIT_DISTANCE: f32 = 188.3;
 pub(super) const STARFIELD_COUNT: usize = 900;
 pub(super) const STARFIELD_RADIUS: f32 = 30_000.0;
 
@@ -258,7 +260,7 @@ impl HorizonsSyncState {
 
 #[derive(Resource, Clone)]
 pub(super) struct HorizonsHttpClient {
-    pub(super) client: Client,
+    pub(super) client: HorizonsClient,
 }
 
 #[derive(Resource, Default)]

@@ -101,10 +101,6 @@ pub(super) struct AsteroidEntity {
     pub(super) index: u32,
 }
 
-/// Marker for the asteroid root entity, used by the visibility toggle.
-#[derive(Component)]
-pub(super) struct AsteroidMarker;
-
 /// Spawn the entire belt at startup. Runs after `setup_scene` so the
 /// shared starfield/lighting infrastructure is already up.
 pub(super) fn spawn_asteroid_belt(
@@ -218,7 +214,6 @@ pub(super) fn spawn_asteroid_belt(
             AsteroidEntity {
                 index: index as u32,
             },
-            AsteroidMarker,
         ));
     }
 
@@ -259,7 +254,7 @@ pub(super) fn update_asteroid_positions(
 /// Cheaper than despawning the swarm.
 pub(super) fn sync_asteroid_visibility(
     render_settings: Res<RenderSettings>,
-    mut query: Query<&mut Visibility, With<AsteroidMarker>>,
+    mut query: Query<&mut Visibility, With<AsteroidEntity>>,
 ) {
     let target = if render_settings.asteroids_enabled {
         Visibility::Visible
